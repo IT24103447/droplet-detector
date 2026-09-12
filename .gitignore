@@ -1,0 +1,14 @@
+__pycache__/
+*.pyc
+.venv/
+data/raw/*
+data/results/*
+!data/raw/.gitkeep
+!data/results/.gitkeep
+*.mp4
+*.avi
+.mypy_cache/
+.pytest_cache/
+dist/
+*.egg-info/
+.idea/
