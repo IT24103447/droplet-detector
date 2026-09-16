@@ -38,7 +38,17 @@ uv pip install -e ".[dev]"
 pip install -e ".[dev]"
 ```
 
-### Run Detection on a Fabric
+### Launch Web UI Dashboard
+
+Upload dry references (with fabric selection), upload raw test photos, and interactively run and inspect detections:
+
+```bash
+python scripts/run_ui.py
+# or
+streamlit run app.py
+```
+
+### Run Detection on a Fabric (CLI)
 
 ```bash
 python scripts/run_prototype.py \

@@ -58,6 +58,15 @@ def detect_droplets_in_image(
             f"or dry-reference ({dry_reference_path}) image"
         )
 
+    # Ensure dry reference matches current image dimensions
+    if dry.shape[:2] != current.shape[:2]:
+        if (dry.shape[0], dry.shape[1]) == (current.shape[1], current.shape[0]):
+            dry = cv2.rotate(dry, cv2.ROTATE_90_CLOCKWISE)
+        if dry.shape[:2] != current.shape[:2]:
+            dry = cv2.resize(
+                dry, (current.shape[1], current.shape[0]), interpolation=cv2.INTER_AREA
+            )
+
     diff = diff_against_dry_reference(current, dry, noise_floor=config.diff_noise_floor)
     gray_current = cv2.cvtColor(current, cv2.COLOR_BGR2GRAY)
 
