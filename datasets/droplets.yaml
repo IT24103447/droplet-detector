@@ -1,0 +1,8 @@
+# Put labelled images under datasets/images/{train,val,test} and matching
+# YOLO segmentation labels under datasets/labels/{train,val,test}.
+path: datasets
+train: images/train
+val: images/val
+test: images/test
+names:
+  0: water_droplet

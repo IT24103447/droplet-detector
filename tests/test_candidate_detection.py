@@ -16,6 +16,7 @@ from droplet_detector.candidate_detection import (
     Candidate,
     detect_via_hough,
     detect_via_mser,
+    detect_via_contours,
     merge_candidates,
 )
 from droplet_detector.preprocessing import diff_against_dry_reference
@@ -83,6 +84,23 @@ class TestDetectViaMSER:
         img = np.zeros((200, 200), dtype=np.uint8)
         candidates = detect_via_mser(img, min_area=50, max_area=5000)
         assert len(candidates) == 0
+
+
+class TestDetectViaContours:
+    """Tests for compact changed-region fallback detection."""
+
+    def test_finds_small_filled_droplet_patch(self) -> None:
+        img = np.zeros((200, 200), dtype=np.uint8)
+        cv2.circle(img, (100, 100), 7, 180, -1)
+        candidates = detect_via_contours(img, min_area=int(3.14 * 10**2), max_area=int(3.14 * 25**2))
+        assert candidates
+        assert min(abs(c.x - 100) for c in candidates) < 3
+        assert min(abs(c.y - 100) for c in candidates) < 3
+
+    def test_ignores_scattered_pixel_noise(self) -> None:
+        rng = np.random.default_rng(42)
+        img = np.where(rng.random((200, 200)) > 0.995, 30, 0).astype(np.uint8)
+        assert detect_via_contours(img, min_area=300, max_area=2000) == []
 
 
 class TestMergeCandidates:

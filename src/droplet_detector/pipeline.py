@@ -17,11 +17,18 @@ from .preprocessing import diff_against_dry_reference
 from .candidate_detection import (
     Candidate,
     detect_via_hough,
+    detect_via_wet_image_hough,
     detect_via_mser,
+    detect_via_contours,
+    has_reference_change,
     merge_candidates,
 )
 from .scoring import confidence
 from .models import DropletDetection
+
+
+class ReferencePairMismatchError(ValueError):
+    """The dry and wet photos differ too broadly for reliable comparison."""
 
 
 def detect_droplets_in_image(
@@ -70,22 +77,55 @@ def detect_droplets_in_image(
     diff = diff_against_dry_reference(current, dry, noise_floor=config.diff_noise_floor)
     gray_current = cv2.cvtColor(current, cv2.COLOR_BGR2GRAY)
 
+    changed_fraction = float(np.count_nonzero(diff)) / diff.size
+    if changed_fraction > config.max_reference_change_fraction:
+        raise ReferencePairMismatchError(
+            "The dry reference and test photo differ across "
+            f"{changed_fraction:.0%} of the image. Retake both photos with "
+            "the same fabric position, camera angle, distance, and lighting."
+        )
+
     # Real mm/pixel comes from ArUco calibration in Step 2.
     # Step 1 accepts a rough manual estimate, or leaves output in pixels only.
     mm_per_px = config.mm_per_pixel or 0.05
     min_r_px = max(int((config.droplet_min_diameter_mm / 2) / mm_per_px), 2)
+    # Before ArUco calibration there is no reliable pixel scale.  Keep the
+    # search broad enough for small droplets in ordinary webcam photographs.
+    if config.mm_per_pixel is None:
+        min_r_px = min(min_r_px, 3)
     max_r_px = max(
         int((config.droplet_max_diameter_mm / 2) / mm_per_px), min_r_px + 1
     )
 
     hough = detect_via_hough(diff, min_r_px, max_r_px)
+    # The wet-image fallback catches larger, reflective droplets whose rim is
+    # clear to the eye but faint after dry-reference differencing.  Keep only
+    # circles containing genuine dry-to-wet change to avoid fabric texture.
+    wet_hough = [
+        candidate
+        for candidate in detect_via_wet_image_hough(gray_current, min_r_px, max_r_px)
+        if has_reference_change(diff, candidate)
+    ]
     mser = detect_via_mser(
         diff, int(3.14 * min_r_px**2), int(3.14 * max_r_px**2)
     )
-    merged = merge_candidates(hough + mser, merge_dist_px=min_r_px)
+    contours = detect_via_contours(
+        diff, int(3.14 * min_r_px**2), int(3.14 * max_r_px**2)
+    )
+    merged = merge_candidates(
+        hough + wet_hough + mser + contours, merge_dist_px=min_r_px
+    )
 
-    expected_r = (min_r_px + max_r_px) / 2
-    tolerance = (max_r_px - min_r_px) / 2 + 1
+    if config.mm_per_pixel is None:
+        # Without calibration this is a broad pixel search, so scoring against
+        # the midpoint would unfairly penalise the small droplets we explicitly
+        # allowed above.  Use a small-droplet prior and the full search span as
+        # tolerance; calibrated runs retain the precise midpoint scoring.
+        expected_r = float(min_r_px * 2)
+        tolerance = float(max_r_px - min_r_px)
+    else:
+        expected_r = (min_r_px + max_r_px) / 2
+        tolerance = (max_r_px - min_r_px) / 2 + 1
 
     detections: list[DropletDetection] = []
     for i, cand in enumerate(merged, start=1):

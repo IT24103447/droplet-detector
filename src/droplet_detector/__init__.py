@@ -5,6 +5,7 @@ __version__ = "0.1.0"
 from .config import DropletDetectorConfig, ROI
 from .models import DropletDetection, FabricAccuracyReport
 from .pipeline import detect_droplets_in_image
+from .single_image import detect_droplets_in_single_image, ModelNotReadyError
 
 __all__ = [
     "DropletDetectorConfig",
@@ -12,4 +13,6 @@ __all__ = [
     "DropletDetection",
     "FabricAccuracyReport",
     "detect_droplets_in_image",
+    "detect_droplets_in_single_image",
+    "ModelNotReadyError",
 ]

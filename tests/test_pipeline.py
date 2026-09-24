@@ -13,7 +13,10 @@ import pytest
 
 from conftest import save_temp_image
 from droplet_detector.config import DropletDetectorConfig
-from droplet_detector.pipeline import detect_droplets_in_image
+from droplet_detector.pipeline import (
+    ReferencePairMismatchError,
+    detect_droplets_in_image,
+)
 from droplet_detector.models import DropletDetection
 
 
@@ -77,6 +80,22 @@ class TestPipelineEndToEnd:
         assert len(detections) == 0, (
             f"Wrinkle should be rejected, got {len(detections)} detection(s)"
         )
+
+    def test_rejects_misaligned_reference_pair(
+        self,
+        dry_reference_image: np.ndarray,
+        tmp_data_dir: Path,
+        default_config: DropletDetectorConfig,
+    ) -> None:
+        """A globally different frame must not turn fabric texture into droplets."""
+        dry_path = save_temp_image(dry_reference_image, tmp_data_dir, "dry.jpg")
+        unrelated = np.roll(dry_reference_image, 60, axis=1)
+        unrelated_path = save_temp_image(unrelated, tmp_data_dir, "unrelated.jpg")
+        strict_config = default_config.model_copy(
+            update={"diff_noise_floor": 0, "max_reference_change_fraction": 0.01}
+        )
+        with pytest.raises(ReferencePairMismatchError):
+            detect_droplets_in_image(unrelated_path, dry_path, strict_config)
 
     def test_missing_image_raises_error(
         self,

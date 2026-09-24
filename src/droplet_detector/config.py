@@ -59,6 +59,12 @@ class DropletDetectorConfig(BaseModel):
         le=255,
         description="Pixel-value differences below this are zeroed (sensor noise)",
     )
+    max_reference_change_fraction: float = Field(
+        0.12,
+        gt=0.0,
+        le=1.0,
+        description="Largest fraction of changed pixels allowed before the dry/wet pair is treated as misaligned",
+    )
 
     @field_validator("video_save_path", "image_save_path", "results_save_path")
     @classmethod

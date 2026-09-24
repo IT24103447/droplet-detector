@@ -8,6 +8,7 @@ dependencies = [
     "numpy>=1.26",
     "pydantic>=2.7",
     "streamlit>=1.35",
+    "streamlit-drawable-canvas>=0.13",
     "pillow>=10.0",
 ]
 
@@ -19,6 +20,9 @@ dev = [
 ui = [
     "streamlit>=1.35",
     "pillow>=10.0",
+]
+ml = [
+    "ultralytics>=8.3",
 ]
 
 [build-system]

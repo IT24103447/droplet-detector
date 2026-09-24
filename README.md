@@ -1,18 +1,16 @@
 # Droplet Detector
 
-Classical computer-vision pipeline for automatic water-droplet detection on fabric samples during hydrostatic-pressure testing.
+Local one-image water-droplet detection and live-camera training pipeline for fabric samples during hydrostatic-pressure testing.
 
 ## Overview
 
-This library detects water droplets (1–5 mm) on fabric samples by comparing a "wet" photo against a pre-captured dry reference image. It uses a combination of:
+The production path trains one local model to recognise water droplets from a single fabric photo. It does not need a dry reference at runtime. The project also retains a classical dry-reference prototype for comparison and data-collection experiments.
 
-- **Illumination flattening** — removes broad lighting gradients before differencing
-- **Dry-reference differencing** — cancels the fabric's weave pattern and fixed reflections
-- **Noise-floor suppression** — zeroes out sensor noise without contrast-stretching artefacts
-- **Hough circle detection** — finds round shapes in the expected size range
-- **MSER blob detection** — finds stable extremal regions with a circularity filter
-- **Confidence scoring** — scores candidates on size match, bright-centre highlight, and roundness
-- **Frame-to-frame consistency** — filters transient noise by requiring spatial persistence
+The one-image model will learn from labelled examples of:
+
+- real water droplets;
+- dry fabric and normal weave patterns;
+- reflections, folds, shadows, and existing wet areas.
 
 ## Supported Fabrics
 
@@ -40,13 +38,42 @@ pip install -e ".[dev]"
 
 ### Launch Web UI Dashboard
 
-Upload dry references (with fabric selection), upload raw test photos, and interactively run and inspect detections:
+Label training photos, train the local model, and detect droplets in one uploaded photo:
 
 ```bash
 python scripts/run_ui.py
 # or
 streamlit run app.py
 ```
+
+### Train the Single-Image Droplet Model
+
+The final live-camera workflow does not need a dry reference. Label each
+droplet in representative fabric photos with a tight rectangle, then place
+image/label pairs in the matching folders below:
+
+```text
+datasets/
+  images/train/   labels/train/
+  images/val/     labels/val/
+  images/test/    labels/test/
+```
+
+Use separate test runs for training and validation so near-identical video
+frames do not appear in both sets. Include dry fabric, reflections, folds,
+existing wet areas, and real droplets across every target fabric.
+
+Install the optional local ML tools and train:
+
+```bash
+pip install -e ".[ml]"
+python scripts/train_detection.py --data datasets/droplets.yaml
+```
+
+Copy the resulting `best.pt` model to `models/droplet-seg.pt`. The dashboard's
+**Detect One Photo** tab then identifies droplets from a single image without
+a dry reference. The same detector is the one that will run on each live
+camera frame before multi-frame leak tracking is added.
 
 ### Run Detection on a Fabric (CLI)
 
@@ -84,7 +111,8 @@ droplet-detector/
 │   ├── run_prototype.py     # Run detection on a folder of fabric photos
 │   └── evaluate.py          # Compare detections to CVAT ground truth
 ├── tests/                   # Pytest suite with synthetic fixtures
-├── data/                    # Raw images, references, annotations, results
+├── datasets/                # Labelled images and YOLO training labels
+├── data/                    # Uploaded images and legacy prototype outputs
 └── docs/                    # Documentation (MkDocs, step reports)
 ```
 
