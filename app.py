@@ -23,6 +23,7 @@ from droplet_detector import OutputPaths, VideoSettings, analyze_video, start_te
 from droplet_detector.fabric_training import train_annotated_profile, train_profile
 from droplet_detector.video import VideoPreview
 from droplet_detector.video_annotation import label_path, load_boxes, read_frame, save_frame
+from droplet_detector.vision_language import MODEL_NAME
 
 ROOT = Path(__file__).resolve().parent
 DEFAULT_MODEL = ROOT / "models" / "droplet-seg.pt"
@@ -64,22 +65,35 @@ def test_settings(key: str):
     profiles = {"General model": DEFAULT_MODEL}
     profiles.update((p.stem.replace("_", " "), p) for p in sorted(PROFILES.glob("*.pt")))
     available = {name: path for name, path in profiles.items() if path.is_file()}
-    if not available:
-        st.warning("No trained model is available. Add your trained weights or create a fabric model.")
-        return None
-    model = st.selectbox("Detection model", list(available), key=f"{key}_model")
+    vision_option = "Local vision-language model (experimental)"
+    model = st.selectbox("Detection model", [*available, vision_option], key=f"{key}_model")
+    vision = model == vision_option
+    if vision:
+        st.caption(f"Requires Ollama running on this computer with {MODEL_NAME} installed. "
+                   "Uses the opening frame as context, so start with dry fabric.")
     with st.expander("Detection settings"):
         confidence = st.slider("Minimum confidence", .05, .95, .25, .05, key=f"{key}_conf")
         hits = st.number_input("Frame observations to confirm a leak", 1, 30, 3, key=f"{key}_hits")
-        distance = st.number_input("Position matching distance (px)", 1, 100, 10, key=f"{key}_distance")
+        distance = st.number_input("Position matching distance (px)", 1, 100, 30 if vision else 10,
+                                   key=f"{key}_distance_{vision}")
+        interval = 2.0
+        if vision:
+            interval = st.number_input("Seconds between samples", .25, 60., 2., step=.25, key=f"{key}_interval")
         roi = None
-        if st.checkbox("Limit detection to a fabric area", key=f"{key}_roi"):
+        shape = "rectangle"
+        roi_label = "Set a custom fabric area" if vision else "Limit detection to a fabric area"
+        if st.checkbox(roi_label, key=f"{key}_roi_{vision}"):
+            shape = st.selectbox("Fabric area shape", ("ellipse", "rectangle") if vision else ("rectangle", "ellipse"),
+                                 format_func=str.capitalize, key=f"{key}_shape_{vision}")
             columns = st.columns(4)
             roi = tuple(column.number_input(label, minimum, value=default, key=f"{key}_{label}")
                         for column, label, minimum, default in
                         zip(columns, ("X", "Y", "Width", "Height"), (0, 0, 1, 1), (0, 0, 640, 480)))
-    return dict(model_path=available[model], confidence_threshold=confidence,
-                confirmation_hits=hits, match_distance_px=distance, roi=roi)
+        elif vision:
+            st.caption("Uses the central oval for the company's hydrotester framing.")
+    return dict(model_path=available.get(model, DEFAULT_MODEL), confidence_threshold=confidence,
+                confirmation_hits=hits, match_distance_px=distance, roi=roi, roi_shape=shape,
+                detector_backend="vision" if vision else "yolo", vision_interval_s=interval)
 
 
 def show_preview(preview: Preview, waiting: str) -> None:

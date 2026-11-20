@@ -1,0 +1,308 @@
+[
+  {
+    "index": 9,
+    "file": "Custom__10_0_PSI_min-2-video-102026-1343.mp4",
+    "duration_s": 175.29,
+    "samples": 10,
+    "bytes": 66046114,
+    "bucket": "No visible leaks in sampled frames",
+    "previous_bucket": "Needs review"
+  },
+  {
+    "index": 11,
+    "file": "Custom__10_0_PSI_min-2026-10-19_10_13-video-101926-1014.mp4",
+    "duration_s": 44.69,
+    "samples": 10,
+    "bytes": 17645727,
+    "bucket": "Visible leaks",
+    "previous_bucket": "Needs review"
+  },
+  {
+    "index": 12,
+    "file": "Custom__10_0_PSI_min-2026-10-19_10_34-video-101926-1040.mp4",
+    "duration_s": 196.85,
+    "samples": 10,
+    "bytes": 73720944,
+    "bucket": "No visible leaks in sampled frames",
+    "previous_bucket": "Needs review"
+  },
+  {
+    "index": 15,
+    "file": "Custom__10_0_PSI_min-2026-10-19_10_57-video-101926-1058.mp4",
+    "duration_s": 20.45,
+    "samples": 10,
+    "bytes": 7609541,
+    "bucket": "No visible leaks in sampled frames",
+    "previous_bucket": "Needs review"
+  },
+  {
+    "index": 39,
+    "file": "Custom__10_0_PSI_min-2026-10-20_11_34-video-102026-1136.mp4",
+    "duration_s": 127.38,
+    "samples": 10,
+    "bytes": 47973380,
+    "bucket": "No visible leaks in sampled frames",
+    "previous_bucket": "Needs review"
+  },
+  {
+    "index": 49,
+    "file": "Custom__10_0_PSI_min-2026-10-20_14_15-video-102026-1418.mp4",
+    "duration_s": 176.03,
+    "samples": 10,
+    "bytes": 67943082,
+    "bucket": "No visible leaks in sampled frames",
+    "previous_bucket": "Needs review"
+  },
+  {
+    "index": 61,
+    "file": "Custom__10_0_PSI_min-pinnacal_15mm_hood-video-102026-1221.mp4",
+    "duration_s": 81.7,
+    "samples": 10,
+    "bytes": 59150018,
+    "bucket": "Visible leaks",
+    "previous_bucket": "Needs review"
+  },
+  {
+    "index": 79,
+    "file": "Custom__5_00_PSI_min-2026-10-08_04_53-video-100826-0501.mp4",
+    "duration_s": 234.43,
+    "samples": 10,
+    "bytes": 107902557,
+    "bucket": "No visible leaks in sampled frames",
+    "previous_bucket": "Needs review"
+  },
+  {
+    "index": 94,
+    "file": "Custom__5_00_PSI_min-2026-10-09_07_15-video-100926-0716.mp4",
+    "duration_s": 19.49,
+    "samples": 10,
+    "bytes": 7148224,
+    "bucket": "Visible leaks",
+    "previous_bucket": "Needs review"
+  },
+  {
+    "index": 100,
+    "file": "Custom__5_00_PSI_min-2026-10-09_09_23-video-100926-0923.mp4",
+    "duration_s": 34.01,
+    "samples": 10,
+    "bytes": 13943366,
+    "bucket": "Visible leaks",
+    "previous_bucket": "Needs review"
+  },
+  {
+    "index": 120,
+    "file": "Custom__5_0_PSI_min-2026-10-13_07_02-video-101326-0704.mp4",
+    "duration_s": 89.99,
+    "samples": 10,
+    "bytes": 39007234,
+    "bucket": "Visible leaks",
+    "previous_bucket": "Needs review"
+  },
+  {
+    "index": 126,
+    "file": "Custom__5_0_PSI_min-2026-10-13_12_20-video-101326-1223.mp4",
+    "duration_s": 193.97,
+    "samples": 10,
+    "bytes": 70240916,
+    "bucket": "No visible leaks in sampled frames",
+    "previous_bucket": "Needs review"
+  },
+  {
+    "index": 133,
+    "file": "Custom__5_0_PSI_min-2026-10-14_05_29-video-101426-0533.mp4",
+    "duration_s": 226.76,
+    "samples": 10,
+    "bytes": 84769644,
+    "bucket": "No visible leaks in sampled frames",
+    "previous_bucket": "Needs review"
+  },
+  {
+    "index": 137,
+    "file": "Custom__5_0_PSI_min-2026-10-14_06_18-video-101426-0622.mp4",
+    "duration_s": 228.17,
+    "samples": 10,
+    "bytes": 87402068,
+    "bucket": "No visible leaks in sampled frames",
+    "previous_bucket": "Needs review"
+  },
+  {
+    "index": 145,
+    "file": "Custom__5_0_PSI_min-2026-10-14_09_04-video-101426-0918.mp4",
+    "duration_s": 45.04,
+    "samples": 10,
+    "bytes": 18169028,
+    "bucket": "Visible leaks",
+    "previous_bucket": "Needs review"
+  },
+  {
+    "index": 146,
+    "file": "Custom__5_0_PSI_min-2026-10-14_09_29-video-101426-0932.mp4",
+    "duration_s": 131.32,
+    "samples": 10,
+    "bytes": 52259900,
+    "bucket": "Visible leaks",
+    "previous_bucket": "Needs review"
+  },
+  {
+    "index": 147,
+    "file": "Custom__5_0_PSI_min-2026-10-14_09_32-video-101426-0934.mp4",
+    "duration_s": 78.96,
+    "samples": 10,
+    "bytes": 29059116,
+    "bucket": "Visible leaks",
+    "previous_bucket": "Needs review"
+  },
+  {
+    "index": 149,
+    "file": "Custom__5_0_PSI_min-2026-10-14_10_22-video-101426-1026.mp4",
+    "duration_s": 142.78,
+    "samples": 10,
+    "bytes": 52153904,
+    "bucket": "Visible leaks",
+    "previous_bucket": "Needs review"
+  },
+  {
+    "index": 150,
+    "file": "Custom__5_0_PSI_min-2026-10-14_10_28-video-101426-1029.mp4",
+    "duration_s": 72.87,
+    "samples": 10,
+    "bytes": 28359551,
+    "bucket": "Visible leaks",
+    "previous_bucket": "Needs review"
+  },
+  {
+    "index": 153,
+    "file": "Custom__5_0_PSI_min-2026-10-15_05_22-video-101526-0530.mp4",
+    "duration_s": 227.9,
+    "samples": 10,
+    "bytes": 77609103,
+    "bucket": "No visible leaks in sampled frames",
+    "previous_bucket": "Needs review"
+  },
+  {
+    "index": 154,
+    "file": "Custom__5_0_PSI_min-2026-10-15_05_32-video-101526-0539.mp4",
+    "duration_s": 233.13,
+    "samples": 10,
+    "bytes": 80443183,
+    "bucket": "No visible leaks in sampled frames",
+    "previous_bucket": "Needs review"
+  },
+  {
+    "index": 164,
+    "file": "Custom__5_0_PSI_min-2026-10-15_11_30-video-101526-1131.mp4",
+    "duration_s": 78.43,
+    "samples": 10,
+    "bytes": 27466007,
+    "bucket": "No visible leaks in sampled frames",
+    "previous_bucket": "Needs review"
+  },
+  {
+    "index": 166,
+    "file": "Custom__5_0_PSI_min-2026-10-15_12_37-video-101526-1239.mp4",
+    "duration_s": 133.84,
+    "samples": 10,
+    "bytes": 48792612,
+    "bucket": "Visible leaks",
+    "previous_bucket": "Needs review"
+  },
+  {
+    "index": 189,
+    "file": "Custom__5_0_PSI_min-2026-10-17_09_24-video-101726-0929.mp4",
+    "duration_s": 165.52,
+    "samples": 10,
+    "bytes": 58559772,
+    "bucket": "Visible leaks",
+    "previous_bucket": "Needs review"
+  },
+  {
+    "index": 193,
+    "file": "Custom__5_0_PSI_min-2026-10-17_10_24-video-101726-1028.mp4",
+    "duration_s": 229.77,
+    "samples": 10,
+    "bytes": 82672983,
+    "bucket": "No visible leaks in sampled frames",
+    "previous_bucket": "Needs review"
+  },
+  {
+    "index": 196,
+    "file": "Custom__5_0_PSI_min-2026-10-17_11_27-video-101726-1130.mp4",
+    "duration_s": 96.34,
+    "samples": 10,
+    "bytes": 34653093,
+    "bucket": "No visible leaks in sampled frames",
+    "previous_bucket": "Needs review"
+  },
+  {
+    "index": 197,
+    "file": "Custom__5_0_PSI_min-2026-10-17_13_08-video-101726-1313.mp4",
+    "duration_s": 229.57,
+    "samples": 10,
+    "bytes": 79707884,
+    "bucket": "No visible leaks in sampled frames",
+    "previous_bucket": "Needs review"
+  },
+  {
+    "index": 198,
+    "file": "Custom__5_0_PSI_min-2026-10-17_13_15-video-101726-1319.mp4",
+    "duration_s": 227.99,
+    "samples": 10,
+    "bytes": 83122475,
+    "bucket": "Visible leaks",
+    "previous_bucket": "Needs review"
+  },
+  {
+    "index": 201,
+    "file": "Custom__5_0_PSI_min-2026-10-19_09_09-video-101926-0912.mp4",
+    "duration_s": 230.24,
+    "samples": 10,
+    "bytes": 150187822,
+    "bucket": "No visible leaks in sampled frames",
+    "previous_bucket": "Needs review"
+  },
+  {
+    "index": 202,
+    "file": "Custom__5_0_PSI_min-2026-10-19_09_17-video-101926-0919.mp4",
+    "duration_s": 118.06,
+    "samples": 10,
+    "bytes": 75973712,
+    "bucket": "Visible leaks",
+    "previous_bucket": "Needs review"
+  },
+  {
+    "index": 206,
+    "file": "Custom__5_0_PSI_min-2026-10-19_09_50-video-101926-0952.mp4",
+    "duration_s": 125.12,
+    "samples": 10,
+    "bytes": 47245126,
+    "bucket": "No visible leaks in sampled frames",
+    "previous_bucket": "Needs review"
+  },
+  {
+    "index": 226,
+    "file": "Custom__5_0_PSI_min-2026-10-19_14_28-video-101926-1429.mp4",
+    "duration_s": 35.06,
+    "samples": 10,
+    "bytes": 15654425,
+    "bucket": "Visible leaks",
+    "previous_bucket": "Needs review"
+  },
+  {
+    "index": 237,
+    "file": "Custom__5_0_PSI_min-2026-10-19_15_23-video-101926-1526.mp4",
+    "duration_s": 146.33,
+    "samples": 10,
+    "bytes": 62737625,
+    "bucket": "No visible leaks in sampled frames",
+    "previous_bucket": "Needs review"
+  },
+  {
+    "index": 266,
+    "file": "Manual_Test-2026-10-16_16_22-video-101626-1624.mp4",
+    "duration_s": 76.23,
+    "samples": 10,
+    "bytes": 28798509,
+    "bucket": "Needs review",
+    "previous_bucket": null
+  }
+]

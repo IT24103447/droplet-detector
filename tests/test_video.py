@@ -1,11 +1,13 @@
 """Exercise the video contract using repeatable detections and real video files."""
+import base64
 import json
 
 import cv2
 import numpy as np
+import pytest
 
-from droplet_detector import DropletDetection, OutputPaths, VideoSettings, analyze_video, start_test
-from droplet_detector import video
+from droplet_detector import DropletDetection, OutputPaths, VideoSettings, VisionLanguageDetector, analyze_video, start_test
+from droplet_detector import video, vision_language
 
 
 def test_replay_records_three_distinct_leaks_and_keeps_recording(tmp_path, monkeypatch):
@@ -94,3 +96,55 @@ def test_live_session_can_stop_and_save_outputs(tmp_path, monkeypatch):
     assert len(result.leaks) == 1
     assert result.leaks[0].detection_time_s >= 0
     assert result.video_filename is not None
+
+
+def test_vision_replay_uses_opening_image_and_fabric_ellipse(tmp_path, monkeypatch):
+    source = tmp_path / "vision.mp4"
+    writer = cv2.VideoWriter(str(source), cv2.VideoWriter_fourcc(*"mp4v"), 10, (160, 120))
+    assert writer.isOpened()
+    for i in range(16):
+        writer.write(np.full((120, 160, 3), 55 + 2 * i, dtype=np.uint8))
+    writer.release()
+    references = []
+
+    def vision_service(path, payload):
+        if path == "/api/show":
+            return {"capabilities": ["vision"]}
+        assert path == "/api/chat"
+        opening, current = payload["messages"][0]["images"]
+        assert opening != current
+        references.append(opening)
+        image = cv2.imdecode(np.frombuffer(base64.b64decode(current), dtype=np.uint8), cv2.IMREAD_COLOR)
+        assert image.shape[:2] == (80, 80)
+        assert (image[0, 0] == 128).all()
+        return {"message": {"content": json.dumps({"droplets": [
+            {"bbox_2d": [500, 475, 600, 575], "confidence": .9},
+            {"bbox_2d": [500, 475, 600, 575], "confidence": .85},
+            {"bbox_2d": [0, 0, 40, 40], "confidence": .9},
+        ]})}}
+
+    monkeypatch.setattr(vision_language, "_ollama", vision_service)
+    result = analyze_video(source, outputs=OutputPaths.in_directory(tmp_path / "run"),
+                           settings=VideoSettings(detector_backend="vision", vision_interval_s=.3,
+                                                  confirmation_hits=2, roi=(40, 20, 80, 80),
+                                                  roi_shape="ellipse"))
+
+    assert result.status == "completed", result.errors
+    assert len(references) > 1 and len(set(references)) == 1
+    assert len(result.leaks) == 1
+    leak = result.leaks[0]
+    assert (leak.x_px, leak.y_px) == (84, 62)
+    assert leak.detection_time_s == pytest.approx(.3)
+    assert leak.confirmation_time_s >= .6
+    assert cv2.imread(leak.image_filename) is not None
+
+
+def test_vision_still_image_rejects_invalid_boxes(monkeypatch):
+    def vision_service(path, payload):
+        assert path == "/api/chat"
+        assert len(payload["messages"][0]["images"]) == 1
+        return {"message": {"content": '{"droplets":[{"bbox_2d":[600,10,100,20],"confidence":0.9}]}'}}
+
+    monkeypatch.setattr(vision_language, "_ollama", vision_service)
+    with pytest.raises(RuntimeError, match="invalid droplet box"):
+        VisionLanguageDetector()(np.zeros((80, 80, 3), dtype=np.uint8))

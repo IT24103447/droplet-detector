@@ -15,6 +15,36 @@ the files. **Fabric models** trains a separate selectable profile. Choose
 existing labelled CVAT YOLO Detection ZIP. The general model remains
 available for detection.
 
+### Try the local vision-language detector
+
+Install [Ollama for Windows](https://docs.ollama.com/windows), start it, and
+download the image-capable model once:
+
+```powershell
+ollama pull qwen3-vl:2b-instruct
+```
+
+In **Recorded video** or **Live camera**, select **Local vision-language
+model (experimental)**. Start the test with dry fabric in view. The app takes
+its reference from the opening frame automatically. It asks the model to mark
+new raised water beads, then tracks the returned positions across sampled
+frames. It sends images to Ollama on the same computer. To force Ollama itself
+to operate offline, start it with `OLLAMA_NO_CLOUD=1`.
+
+With the company camera framing, the default oval covers the central specimen.
+Use **Detection settings → Set a custom fabric area** if the camera is
+positioned differently. The area uses full-frame pixel coordinates. The
+**Seconds between samples** setting controls the time resolution of recorded
+analysis. The reported time is the first sampled observation. On a live camera,
+actual observations can be farther apart if the model is still processing.
+Confirm the timing, false positives, duplicate counts, and misses on the actual
+machine before relying on this mode.
+
+For the command line, add `--detector vision --vision-interval 2` to either
+video command. For a custom oval, add `--roi X Y WIDTH HEIGHT --roi-shape ellipse`.
+Python callers can set `VideoSettings(detector_backend="vision", match_distance_px=30)`.
+To analyze a single BGR image, call `VisionLanguageDetector()(image)`.
+
 ### Label video frames in the dashboard
 
 1. Enter a fabric profile name and choose **Training**. Upload a recording

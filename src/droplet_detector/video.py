@@ -16,6 +16,10 @@ from pydantic import BaseModel, Field
 from .leak_tracking import LeakTracker
 from .models import DropletDetection
 from .single_image import FrameDetector
+from .vision_language import REQUEST_TIMEOUT_S, VisionLanguageDetector
+
+
+VideoDetector = Callable[[np.ndarray], list[DropletDetection]]
 
 
 @dataclass(frozen=True)
@@ -28,8 +32,15 @@ class VideoSettings:
     max_candidate_gap_s: float = 0.5
     resolution: tuple[int, int] | None = None
     frame_rate: float | None = None
+    detector_backend: Literal["yolo", "vision"] = "yolo"
+    roi_shape: Literal["rectangle", "ellipse"] = "rectangle"
+    vision_interval_s: float = 2.0
 
     def __post_init__(self):
+        if self.detector_backend not in ("yolo", "vision") or self.roi_shape not in ("rectangle", "ellipse"):
+            raise ValueError("Unknown detector backend or fabric area shape")
+        if not math.isfinite(self.vision_interval_s) or self.vision_interval_s <= 0:
+            raise ValueError("The vision analysis interval must be finite and positive")
         if not 0 < self.confidence_threshold <= 1 or self.confirmation_hits < 1:
             raise ValueError("Set a confidence threshold in (0, 1] and at least one confirmation hit")
         if not all(math.isfinite(v) and v > 0 for v in (self.match_distance_px, self.max_candidate_gap_s)):
@@ -116,21 +127,30 @@ def _annotate(frame: np.ndarray, leaks: list[LeakEvent]) -> np.ndarray:
     return marked
 
 
-def _detect_frame(detector: FrameDetector, frame: np.ndarray, roi: tuple[int, int, int, int] | None):
+def _detect_frame(detector: VideoDetector, frame: np.ndarray, roi: tuple[int, int, int, int] | None,
+                  roi_shape: Literal["rectangle", "ellipse"] = "rectangle") -> list[DropletDetection]:
     if roi is None:
         return detector(frame)
     x, y, w, h = roi
     if x + w > frame.shape[1] or y + h > frame.shape[0]:
         raise ValueError("The fabric ROI extends outside the captured frame")
+    crop = frame[y:y + h, x:x + w]
+    if roi_shape == "ellipse":
+        yy, xx = np.ogrid[:h, :w]
+        outside = ((2 * xx + 1) / w - 1) ** 2 + ((2 * yy + 1) / h - 1) ** 2 > 1
+        crop = crop.copy()
+        crop[outside] = 128
+
     return [
         d.model_copy(update={"x_px": d.x_px + x, "y_px": d.y_px + y})
-        for d in detector(frame[y:y + h, x:x + w])
+        for d in detector(crop)
+        if roi_shape != "ellipse" or ((2 * d.x_px / w - 1) ** 2 + (2 * d.y_px / h - 1) ** 2 <= 1)
     ]
 
 
 def _run(source: str | int, outputs: OutputPaths, settings: VideoSettings,
          stop: Event, started_at: float, test_start_s: float,
-         detector: FrameDetector | None = None,
+         detector: VideoDetector | None = None,
          on_preview: Callable[[VideoPreview], None] | None = None) -> TestResult:
     result = TestResult(status="completed")
     capture = None
@@ -141,7 +161,19 @@ def _run(source: str | int, outputs: OutputPaths, settings: VideoSettings,
     live = isinstance(source, int)
     wrote_video = False
     skipped = 0
-    tracker = LeakTracker(settings.confirmation_hits, settings.match_distance_px, settings.max_candidate_gap_s)
+    observations = 0
+    vision = settings.detector_backend == "vision"
+    roi, roi_shape = settings.roi, settings.roi_shape
+    gap = settings.max_candidate_gap_s
+    if vision:
+        gap = max(gap, 2 * settings.vision_interval_s)
+        if live:
+            gap = max(gap, REQUEST_TIMEOUT_S + settings.vision_interval_s)
+        result.warnings.append(
+            f"Vision analysis samples at least {settings.vision_interval_s:g}s apart and uses the opening "
+            "frame as its reference. Timestamps locate the first sampled observation."
+        )
+    tracker = LeakTracker(settings.confirmation_hits, settings.match_distance_px, gap)
 
     def process(detections: list[DropletDetection], frame: np.ndarray, elapsed: float) -> None:
         for track in tracker.update(detections, elapsed):
@@ -159,7 +191,14 @@ def _run(source: str | int, outputs: OutputPaths, settings: VideoSettings,
     try:
         video_path, result_path, final_path, snapshots = _output_targets(outputs, source)
         if detector is None:
-            detector = FrameDetector(settings.model_path, settings.confidence_threshold)
+            if vision:
+                local_detector = VisionLanguageDetector(
+                    settings.confidence_threshold, compare_to_opening_frame=True,
+                )
+                local_detector.check_available()
+                detector = local_detector
+            else:
+                detector = FrameDetector(settings.model_path, settings.confidence_threshold)
         capture = cv2.VideoCapture(source)
         if not capture.isOpened():
             raise OSError(f"Could not open {'camera' if live else 'video'}: {source}")
@@ -182,6 +221,7 @@ def _run(source: str | int, outputs: OutputPaths, settings: VideoSettings,
         frame_index = 0
         last_source_time = -1.0
         last_preview = -math.inf
+        next_inference = 0.0
         inference: tuple[Future, np.ndarray, float] | None = None
         while not stop.is_set():
             ok, frame = capture.read()
@@ -210,6 +250,11 @@ def _run(source: str | int, outputs: OutputPaths, settings: VideoSettings,
                 continue
             if writer is None:
                 height, width = frame.shape[:2]
+                if vision and roi is None:
+                    # The company recordings place the circular specimen near the image centre.
+                    roi = (round(.289 * width), round(.121 * height),
+                           max(1, round(.442 * width)), max(1, round(.806 * height)))
+                    roi_shape = "ellipse"
                 if live and settings.resolution and (width, height) != settings.resolution:
                     result.warnings.append(f"Camera captured {width}x{height} instead of requested resolution.")
                 writer = cv2.VideoWriter(str(video_path), cv2.VideoWriter_fourcc(*"mp4v"), fps, (width, height))
@@ -222,11 +267,17 @@ def _run(source: str | int, outputs: OutputPaths, settings: VideoSettings,
                 future, previous_frame, previous_elapsed = inference
                 process(future.result(), previous_frame, previous_elapsed)
                 inference = None
-            if len(result.leaks) < 3:
+            if len(result.leaks) < 3 and elapsed >= next_inference:
                 if executor is None:
-                    process(_detect_frame(detector, frame, settings.roi), frame, elapsed)
+                    process(_detect_frame(detector, frame, roi, roi_shape), frame, elapsed)
+                    if vision:
+                        observations += 1
+                        next_inference = elapsed + settings.vision_interval_s
                 elif inference is None:
-                    inference = (executor.submit(_detect_frame, detector, frame, settings.roi), frame, elapsed)
+                    inference = (executor.submit(_detect_frame, detector, frame, roi, roi_shape), frame, elapsed)
+                    if vision:
+                        observations += 1
+                        next_inference = elapsed + settings.vision_interval_s
                 else:
                     skipped += 1
             if on_preview is not None and acquired_at - last_preview >= 0.25:
@@ -256,6 +307,8 @@ def _run(source: str | int, outputs: OutputPaths, settings: VideoSettings,
             executor.shutdown(wait=True)
     if skipped:
         result.warnings.append(f"Inference skipped {skipped} live frames while busy. Capture kept recording.")
+    if vision and wrote_video and observations < 2:
+        result.warnings.append("The recording ended before a frame could be compared with the opening frame.")
     if wrote_video:
         if video_path.is_file() and video_path.stat().st_size:
             result.video_filename = str(video_path)
@@ -294,7 +347,7 @@ class LiveTest:
     """A running capture session. The caller owns its Start and Stop signals."""
 
     def __init__(self, camera_id: int, outputs: OutputPaths, settings: VideoSettings,
-                 detector: FrameDetector | None = None,
+                 detector: VideoDetector | None = None,
                  on_preview: Callable[[VideoPreview], None] | None = None):
         started_at = time.monotonic()
         self._stop = Event()
@@ -319,7 +372,7 @@ class LiveTest:
 
 def start_test(camera_id: int, *, outputs: OutputPaths,
                settings: VideoSettings = VideoSettings(),
-               prepared_detector: FrameDetector | None = None,
+               prepared_detector: VideoDetector | None = None,
                on_preview: Callable[[VideoPreview], None] | None = None) -> LiveTest:
     """Start a live test. Supply a preloaded detector to avoid loading weights after Start."""
     if type(camera_id) is not int or camera_id < 0:

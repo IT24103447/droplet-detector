@@ -7,6 +7,7 @@ from .models import DropletDetection, FabricAccuracyReport
 from .pipeline import detect_droplets_in_image
 from .single_image import FrameDetector, detect_droplets_in_single_image, ModelNotReadyError
 from .video import LeakEvent, LiveTest, OutputPaths, TestResult, VideoSettings, analyze_video, start_test
+from .vision_language import VisionLanguageDetector
 
 __all__ = [
     "DropletDetectorConfig",
@@ -17,6 +18,7 @@ __all__ = [
     "detect_droplets_in_single_image",
     "ModelNotReadyError",
     "FrameDetector",
+    "VisionLanguageDetector",
     "LeakEvent",
     "LiveTest",
     "OutputPaths",
