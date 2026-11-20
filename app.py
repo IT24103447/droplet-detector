@@ -62,7 +62,11 @@ def busy() -> bool:
 
 
 def test_settings(key: str):
-    profiles = {"General model": DEFAULT_MODEL}
+    profiles = {}
+    reviewed = ROOT / "data/results/reviewed_crop_candidate_20261121/training/weights/best.pt"
+    if reviewed.is_file():
+        profiles["Reviewed specimen model (experimental)"] = reviewed
+    profiles["General model"] = DEFAULT_MODEL
     profiles.update((p.stem.replace("_", " "), p) for p in sorted(PROFILES.glob("*.pt")))
     available = {name: path for name, path in profiles.items() if path.is_file()}
     vision_option = "Local vision-language model (experimental)"
@@ -71,6 +75,8 @@ def test_settings(key: str):
     if vision:
         st.caption(f"Requires Ollama running on this computer with {MODEL_NAME} installed. "
                    "Uses the opening frame as context, so start with dry fabric.")
+    elif model == "Reviewed specimen model (experimental)":
+        st.caption("Trained on reviewed specimen frames. It can still miss droplets; check the marked results.")
     with st.expander("Detection settings"):
         confidence = st.slider("Minimum confidence", .05, .95, .25, .05, key=f"{key}_conf")
         hits = st.number_input("Frame observations to confirm a leak", 1, 30, 3, key=f"{key}_hits")
@@ -80,20 +86,31 @@ def test_settings(key: str):
         if vision:
             interval = st.number_input("Seconds between samples", .25, 60., 2., step=.25, key=f"{key}_interval")
         roi = None
-        shape = "rectangle"
-        roi_label = "Set a custom fabric area" if vision else "Limit detection to a fabric area"
-        if st.checkbox(roi_label, key=f"{key}_roi_{vision}"):
-            shape = st.selectbox("Fabric area shape", ("ellipse", "rectangle") if vision else ("rectangle", "ellipse"),
-                                 format_func=str.capitalize, key=f"{key}_shape_{vision}")
+        shape = "ellipse"
+        automatic = st.radio("Fabric area", ("Find inside the white rim automatically", "Set the fabric area manually"),
+                             key=f"{key}_fabric_area_v2") == "Find inside the white rim automatically"
+        if not automatic:
+            st.caption("Set a box around the fabric opening. Only the oval inside that box is analyzed.")
             columns = st.columns(4)
             roi = tuple(column.number_input(label, minimum, value=default, key=f"{key}_{label}")
                         for column, label, minimum, default in
                         zip(columns, ("X", "Y", "Width", "Height"), (0, 0, 1, 1), (0, 0, 640, 480)))
-        elif vision:
-            st.caption("Uses the central oval for the company's hydrotester framing.")
+        else:
+            st.caption("The cyan outline shows the allowed fabric area. Detection pauses if the white rim cannot be located.")
+        new_only = True
+        surface_water = st.checkbox("Detect spreading water and pools", value=True,
+                                    key=f"{key}_surface_water")
+        st.caption("Start with dry fabric. Spreading water is reported separately from individual droplets; "
+                   "the amber line in its snapshot marks an observed water boundary, not the leak origin.")
+        if not vision:
+            new_only = st.checkbox("Ignore marks already present in the opening frame", value=True,
+                                   key=f"{key}_new_only")
+            st.caption("Leave this on when the recording starts with dry fabric. Turn it off if droplets are already visible at the start.")
     return dict(model_path=available.get(model, DEFAULT_MODEL), confidence_threshold=confidence,
                 confirmation_hits=hits, match_distance_px=distance, roi=roi, roi_shape=shape,
-                detector_backend="vision" if vision else "yolo", vision_interval_s=interval)
+                detector_backend="vision" if vision else "yolo", vision_interval_s=interval,
+                auto_fabric_area=automatic, require_new_appearance=new_only,
+                detect_surface_water=surface_water)
 
 
 def show_preview(preview: Preview, waiting: str) -> None:
@@ -104,14 +121,17 @@ def show_preview(preview: Preview, waiting: str) -> None:
     with st.container(border=True):
         elapsed, count = st.columns(2)
         elapsed.metric("Elapsed test time", f"{frame.elapsed_s:.1f} s")
-        count.metric("Confirmed leaks", f"{frame.leak_count} / 3")
+        count.metric("Confirmed droplets", f"{frame.leak_count} / 3")
+        if frame.water_detected:
+            st.warning("Visible spreading water detected inside the fabric area.")
         st.image(frame.jpeg, width="stretch")
 
 
 def validation(result, key: str) -> None:
     with st.expander("Compare with manually verified leaks"):
         st.write("Add a CSV with x_px, y_px and time_s columns. Times are relative to test start. "
-                 "A file with headers only represents a run with no leaks.")
+                 "This comparison measures individual droplets only. A file with headers only represents "
+                 "a run with no countable droplets; spreading-water warnings are separate.")
         st.download_button("Get CSV template", "x_px,y_px,time_s\n", "reference.csv",
                            mime="text/csv", key=f"{key}_template")
         uploaded = st.file_uploader("Reference leak CSV", type="csv", key=f"{key}_reference")
@@ -171,12 +191,23 @@ def show_results(result, key: str) -> None:
     for warning in result.warnings:
         st.warning(warning)
     total, first, status = st.columns(3)
-    total.metric("Confirmed leaks", f"{len(result.leaks)} / 3")
-    first_time = min((leak.detection_time_s for leak in result.leaks), default=None)
-    first.metric("First leak", f"{first_time:.2f} s" if first_time is not None else "—")
+    total.metric("Confirmed droplets", f"{len(result.leaks)} / 3")
+    times = [leak.detection_time_s for leak in result.leaks]
+    if result.surface_water is not None:
+        times.append(result.surface_water.detection_time_s)
+    first_time = min(times, default=None)
+    first.metric("First water observation", f"{first_time:.2f} s" if first_time is not None else "—")
     status.metric("Test status", result.status.capitalize())
-    if not result.leaks and result.status != "error":
-        st.info("No leak was confirmed in this run.")
+    if result.surface_water is not None:
+        water = result.surface_water
+        st.warning(f"Visible water leakage detected at {water.detection_time_s:.2f} s "
+                   f"and confirmed at {water.confirmation_time_s:.2f} s. "
+                   "Spreading water does not add to the individual droplet count.")
+        if water.image_filename:
+            st.image(water.image_filename, caption="Observed water boundary (amber). The leak origin is not determined.",
+                     width="stretch")
+    if not result.leaks and result.surface_water is None and result.status != "error":
+        st.info("No water leakage was confirmed by the analyzer. This does not establish that the fabric is dry.")
     if result.final_image_filename:
         with st.container(border=True):
             st.markdown("#### Final detection map")
@@ -220,7 +251,7 @@ def show_results(result, key: str) -> None:
 
 def recorded_page() -> None:
     st.header("Analyze a recording")
-    st.write("Upload a company test video to locate and time the first three distinct leaks.")
+    st.write("Upload a company test video to detect visible water leakage and locate up to three individual droplets.")
     settings = test_settings("replay")
     upload = st.file_uploader("Recorded test video", type=["mp4", "mov", "avi", "mkv", "webm"])
     start = st.number_input("Test start in the recording (seconds)", min_value=0.0, value=0.0,
@@ -246,7 +277,7 @@ def recorded_page() -> None:
         if job.done():
             show_results(job.result(), "replay")
         else:
-            @st.fragment(run_every=.5)
+            @st.fragment(run_every=.1)
             def progress():
                 if job.done():
                     st.rerun()
@@ -279,7 +310,7 @@ def live_page() -> None:
         if session.done:
             show_results(session.stop_test(), "live")
         else:
-            @st.fragment(run_every=.5)
+            @st.fragment(run_every=.1)
             def monitor():
                 if session.done:
                     st.rerun()

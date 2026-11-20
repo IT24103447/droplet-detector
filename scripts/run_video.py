@@ -13,11 +13,15 @@ def main() -> int:
     parser.add_argument("--test-start", type=float, default=0.0, help="Test start in seconds from clip start")
     parser.add_argument("--confidence", type=float, default=0.25)
     parser.add_argument("--roi", type=int, nargs=4, metavar=("X", "Y", "WIDTH", "HEIGHT"))
-    parser.add_argument("--roi-shape", choices=("rectangle", "ellipse"), default="rectangle")
+    parser.add_argument("--roi-shape", choices=("rectangle", "ellipse"), default="ellipse")
     parser.add_argument("--vision-interval", type=float, default=2.0, help="Seconds between vision samples")
     parser.add_argument("--confirmation-hits", type=int, default=3)
     parser.add_argument("--match-distance", type=float)
     parser.add_argument("--candidate-gap", type=float, default=0.5)
+    parser.add_argument("--include-opening-droplets", action="store_true",
+                        help="Disable the dry-opening comparison when droplets are already present")
+    parser.add_argument("--no-surface-water", action="store_true",
+                        help="Disable the separate spreading-water check, which needs a dry opening frame")
     args = parser.parse_args()
     try:
         report = analyze_video(
@@ -30,6 +34,8 @@ def main() -> int:
                                    else (30 if args.detector == "vision" else 10)),
                 max_candidate_gap_s=args.candidate_gap,
                 detector_backend=args.detector, roi_shape=args.roi_shape, vision_interval_s=args.vision_interval,
+                require_new_appearance=not args.include_opening_droplets,
+                detect_surface_water=not args.no_surface_water,
             ),
             test_start_s=args.test_start,
         )

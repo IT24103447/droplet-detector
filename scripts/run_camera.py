@@ -13,9 +13,12 @@ def main() -> int:
     parser.add_argument("--resolution", type=int, nargs=2, metavar=("WIDTH", "HEIGHT"))
     parser.add_argument("--frame-rate", type=float)
     parser.add_argument("--roi", type=int, nargs=4, metavar=("X", "Y", "WIDTH", "HEIGHT"))
-    parser.add_argument("--roi-shape", choices=("rectangle", "ellipse"), default="rectangle")
+    parser.add_argument("--roi-shape", choices=("rectangle", "ellipse"), default="ellipse")
     parser.add_argument("--vision-interval", type=float, default=2.0, help="Seconds between vision samples")
     parser.add_argument("--confidence", type=float, default=0.25)
+    parser.add_argument("--include-opening-droplets", action="store_true")
+    parser.add_argument("--no-surface-water", action="store_true",
+                        help="Disable spreading-water analysis when no dry opening is available")
     args = parser.parse_args()
     settings = VideoSettings(
         model_path=args.model,
@@ -25,6 +28,8 @@ def main() -> int:
         confidence_threshold=args.confidence,
         match_distance_px=30 if args.detector == "vision" else 10,
         detector_backend=args.detector, roi_shape=args.roi_shape, vision_interval_s=args.vision_interval,
+        require_new_appearance=not args.include_opening_droplets,
+        detect_surface_water=not args.no_surface_water,
     )
     detector = FrameDetector(settings.model_path, settings.confidence_threshold) if args.detector == "yolo" else None
     input("Press Enter to start the test.")

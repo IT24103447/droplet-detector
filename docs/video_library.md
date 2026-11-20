@@ -2,7 +2,130 @@
 
 The same model and leak tracker process a recorded video or a USB camera. Each
 session reports up to three confirmed leak positions and records through the
-end of a clip or the application's stop command.
+end of a clip or the application's stop command. A separate check reports
+spreading water even when there are no countable droplets.
+
+## Fabric boundary and false-detection checks
+
+Recorded and live tests now locate the **inside edge of the white specimen rim**
+automatically. The cyan outline in previews and saved images marks the allowed
+area. Inference receives a crop with everything outside that oval masked; boxes
+that cross the oval or are too large to be individual beads are rejected before
+tracking. Calibration is checked on every analyzed frame. If the opening frame has no
+reliable rim, the run reports an error and asks for a manual fabric area. If
+calibration becomes unreliable later, detection pauses for those frames while
+recording continues. There is no automatic fallback to the full image.
+
+In **Detection settings**, choose automatic calibration or set a manual bounding
+box around the fabric opening. The dashboard analyzes only the oval inside that
+box. Existing API integrations can explicitly use `auto_fabric_area=False` for
+other framing; manual `roi` coordinates take precedence over automatic detection.
+
+YOLO runs also compare candidate patches with the opening frame to reject static
+stitches, tape marks, and unchanged reflections, allowing small translations and
+uniform brightness changes. Candidate boxes connected to a broad changed region
+(over 20% of the analysis rectangle after smoothing) are also rejected to avoid
+counting a spreading pool as an individual bead. This assumes the test starts with dry fabric. Turn
+off **Ignore marks already present in the opening frame** if the video already
+contains droplets; the CLI equivalent is `--include-opening-droplets`. Significant
+movement rejects candidates, and the result includes a movement warning.
+
+The local **Reviewed specimen model (experimental)** is offered first when its
+trained weights exist. It still misses droplets in the small reviewed test set;
+these area/evidence checks do not establish general counting accuracy. Both YOLO
+and the optional vision-language backend use the same area restriction. The
+vision-language option requires Ollama and its image-capable model running
+locally; it is not selected automatically or used as an unavailable fallback.
+
+Results JSON includes `fabric_roi` and `fabric_roi_shape` for checking calibration.
+
+## Spreading water and pools
+
+**Detect spreading water and pools** is enabled by default. This additional visual
+check compares the fabric opening with its dry starting frame. It samples at
+most four times per video second, requires substantial appearance change and a
+new curved boundary in three consecutive, spatially consistent observations,
+and compensates for small translations and uniform brightness changes. It masks
+long opening-frame seams so pressure-induced seam bending is not counted as water.
+Both the opening and current fabric boundaries restrict the accepted region.
+Live capture performs the check on the inference worker. Vision-backend runs use
+their configured, slower sampling interval.
+
+This check works independently of YOLO proposals. It adds `surface_water` to
+the result with first-observation and confirmation times, an observed boundary,
+and `surface_water.jpg`. The amber boundary is a detected visual edge, not a
+full water segmentation or the position where leakage began. It does not add
+invented droplets to `leaks`. `leakage_detected` is true when either a droplet or
+spreading-water event exists. Integrations should use that field for presence
+and `leaks` for individual bead positions. The reference CSV comparison still
+evaluates individual beads only.
+
+The broad-pool rejection in bead counting remains enabled. Turn off the separate
+surface-water checkbox, or pass `--no-surface-water` in either video/camera CLI,
+when no dry opening is available. This is a conservative heuristic, not a newly
+trained water segmentation model: diffuse films, water already present in the
+opening, water without a clear curved edge, or large movement can be missed.
+Reflections and deformation can still produce false warnings. Absence of a
+warning does not prove the specimen is dry.
+
+Local checks on 2026-11-21:
+
+- Full dashboard pipeline on `100926-0505`: zero countable droplets, but a
+  spreading-water warning at 108.37 s, confirmed at 108.88 s. All frames were
+  recorded. Analysis took 107.29 s for the roughly 116-second recording.
+- Final boundary-restricted surface checks on that clip and three other visible
+  leak recordings (`100926-0923`, `101926-1207`, `101426-0932`) produced warnings;
+  their snapshots were visually checked.
+- Three complete recordings from the no-visible-leak folder (`102026-1115`,
+  `101426-0519`, `101926-1411`) produced no surface-water warnings.
+- A sparse development screen found no candidate boundaries in 640 prepared
+  frames from 160 videos in that folder; 15 additional videos required manual
+  rim calibration. That screen is not a full-video accuracy measurement.
+
+Folder categories are weak labels and the visual reviews are provisional, not
+expert ground truth. These checks do not establish general accuracy. Evidence
+is under `data/results/surface_water_20261121/`; reproduce complete-recording
+surface checks with `scripts/evaluate_surface_water.py VIDEO ... --output-dir NEW_DIR`.
+
+## Faster local video analysis
+
+The detector automatically uses a verified float32 ONNX export when one is
+available for the exact selected weights. Verified Windows GPU execution uses
+DirectML, with the verified CPU runtime available if that adapter cannot load.
+This runs the same 640-pixel YOLO
+network with the original confidence, suppression and coordinate rules, without
+the slower general-purpose prediction wrapper. Every video frame is still
+analyzed; recording frame rate, temporal confirmation, fabric boundary and
+opening-frame/pool checks remain enabled. The preview refreshes up to ten times
+per second, and immutable masks and opening-frame computations are cached.
+
+Exports are stored in `data/results/inference_cache/`, indexed by the source
+weights' SHA-256. The original `.pt` files remain available for training. A
+missing, unverified, modified or incompatible export falls back to the original
+runtime. Retrained weights cannot accidentally reuse an old export.
+
+After training other weights, prepare their runtime using real frame examples:
+
+```powershell
+.\.venv\Scripts\python.exe scripts/optimize_inference.py models/droplet-seg.pt --validation-manifest data/raw/reviewed_candidate_20261121/test_selection.json
+```
+
+The manifest is a JSON array with an `image` path for each example. The command
+checks both full images and masked specimen crops, requiring matching detection
+counts, coordinates within 0.1 pixels and confidence within 0.0001 before
+enabling an export. This is numerical parity checking, not a new accuracy claim.
+Install `.[ml]` for the exporter and optional ONNX Runtime dependencies. Windows
+x64 installs the DirectML build; other platforms use the CPU build. To verify
+and enable a particular Windows graphics adapter, add `--gpu-device ID` to the
+optimization command. This computer's faster adapter was verified as ID 1.
+GPU predictions undergo the same numerical parity checks before being enabled.
+
+On this computer, a 78-frame, 4.97-second segment took 51.35 seconds with the
+original engine and 5.86 seconds with the verified GPU runtime (8.76x faster).
+Both runs saved all 78 frames, evaluated the same 77 reliable-area frames, and
+paused on the same one uncertain-area frame. The leak position and source-video
+timestamps matched. This is a measured example, not a guarantee for every video;
+see `data/results/performance_20261121/video_benchmark.json` for the measurements.
 
 ## Use the dashboard
 
@@ -64,6 +187,77 @@ To analyze a single BGR image, call `VisionLanguageDetector()(image)`.
 
 Saved annotations are stored locally under `data/fabric_annotations/`.
 Reopen the same file under the same fabric name to edit its saved boxes.
+
+### Prepare videos sorted into leak/no-visible-leak folders
+
+Folder names describe recordings, not droplet positions. Before retraining the
+detector, review selected frames and mark every visible individual droplet with
+a bounding box. Review frames from both folders; a negative result from sparse
+sampling does not establish that the entire recording is droplet-free.
+
+```powershell
+.\.venv\Scripts\python.exe scripts/prepare_video_training.py --source "D:\Side Quests\TransitionX\Data" --output data/raw/company_review_20261121
+```
+
+Choose a new output folder for each preparation run. This extracts four frames
+per unique recording at 5%, 40%, 75%, and 98% of its duration, with source paths
+and timestamps in `frames.json` and contact sheets in `review_sheets/`.
+Recording dates and exact duplicate video contents remain in the same split.
+Fabric identity is unknown, so verify independent specimens before evaluating.
+
+Import `cvat_train_images.zip`, `cvat_val_images.zip`, and
+`cvat_test_images.zip` as separate CVAT tasks. Add the `water_droplet` label,
+review all frames, and export Ultralytics YOLO Detection annotations. Only
+explicitly reviewed droplet-free frames should become negative examples. Keep
+test annotations separate from training and threshold selection. Sparse
+sampling may miss first visibility; add reviewed onset frames as needed.
+
+The preparation command creates no detection labels and performs no training.
+It preserves the source recordings and existing model weights.
+
+### Train an isolated candidate from reviewed frames
+
+`scripts/train_reviewed_candidate.py` converts explicitly reviewed preview boxes
+back to full-image YOLO labels and fine-tunes a separate candidate. The annotation
+manifest preserves the source video, timestamp, recording group, and review
+status. AI-reviewed annotations remain provisional and need expert checking
+before being used for acceptance claims. This path does not label the rest of
+the prepared frames automatically or change the dashboard's default weights.
+
+```powershell
+.\.venv\Scripts\python.exe scripts/train_reviewed_candidate.py --annotations data/raw/reviewed_candidate_20261121/annotations.json --output data/results/reviewed_candidate_20261121 --epochs 30
+```
+
+Choose a new output directory for each run. Compare the resulting
+`training/weights/best.pt` against the original model using separate reviewed
+test frames with `scripts/evaluate_reviewed_candidate.py`. That comparison
+checks frame-level boxes at confidence 0.25 and IoU 0.5; it does not establish
+full-video leak timing or count accuracy. Test videos and recording dates must
+be separate from both training and validation.
+
+For a candidate trained on specimen crops, add `--specimen-crop` when training
+and evaluating. The prepared recordings use the normalized crop
+`left=.267, top=.087, right=.753, bottom=.961`. For a 1920-by-1080 recording,
+the equivalent existing video option is `--roi 513 94 933 944`. Check the
+specimen position before applying that crop to another camera setup.
+
+The first cropped experiment on 21 November 2026 used a generic pretrained
+`yolo11n.pt` starting point, 25 training frames and seven validation frames:
+
+```powershell
+.\.venv\Scripts\python.exe scripts/train_reviewed_candidate.py --annotations data/raw/reviewed_candidate_20261121/annotations.json --output data/results/reviewed_crop_candidate_20261121 --base-model yolo11n.pt --specimen-crop --epochs 40 --patience 15
+```
+
+It stopped after 35 epochs, selecting epoch 20. At confidence 0.25 and IoU 0.5,
+the candidate matched four of eight provisionally marked droplets in a selected
+15-frame held-out sample. It missed four and returned no detections on seven
+reviewed negative frames. The original detector, evaluated with the same crop,
+matched none of the eight and produced 58 false boxes. These are small-sample
+results against AI-reviewed labels, not a general accuracy claim. The candidate
+is now offered as **Reviewed specimen model (experimental)** with the fabric
+boundary and opening-frame checks. It still misses droplets; selecting it does
+not establish general counting accuracy. Its local weights and comparison are under
+`data/results/reviewed_crop_candidate_20261121/`.
 
 The results panel accepts an optional reference CSV with `x_px,y_px,time_s`
 to show matched, false, and missed leaks and timing errors against the

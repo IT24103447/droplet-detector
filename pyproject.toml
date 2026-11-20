@@ -23,6 +23,9 @@ ui = [
 ]
 ml = [
     "ultralytics>=8.3",
+    "onnx>=1.16,<2",
+    "onnxruntime>=1.20,<2; sys_platform != 'win32' or platform_machine != 'AMD64'",
+    "onnxruntime-directml>=1.24,<2; sys_platform == 'win32' and platform_machine == 'AMD64'",
 ]
 
 [build-system]

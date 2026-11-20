@@ -44,11 +44,17 @@ def detect_droplets_in_single_image(
 class FrameDetector:
     """Load weights once and find droplet candidates in BGR frames."""
 
-    def __init__(self, model_path: str | Path, confidence_threshold: float = 0.5):
-        self.model = _load_model(Path(model_path))
+    def __init__(self, model_path: str | Path, confidence_threshold: float = 0.5, *, use_acceleration: bool = True):
+        from .fast_inference import load_cached_detector
+
+        self._accelerated = load_cached_detector(Path(model_path)) if use_acceleration else None
+        self.model = None if self._accelerated else _load_model(Path(model_path))
+        self.backend = "onnx" if self._accelerated else "pytorch"
         self.confidence_threshold = confidence_threshold
 
     def __call__(self, frame: np.ndarray) -> list[DropletDetection]:
+        if self._accelerated is not None:
+            return self._accelerated(frame, self.confidence_threshold)
         result = self.model.predict(
             source=frame, conf=self.confidence_threshold, verbose=False
         )[0]

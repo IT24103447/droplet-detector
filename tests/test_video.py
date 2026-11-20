@@ -10,6 +10,17 @@ from droplet_detector import DropletDetection, OutputPaths, VideoSettings, Visio
 from droplet_detector import video, vision_language
 
 
+def test_smaller_preview_keeps_native_detection_and_area_coordinates():
+    frame=np.zeros((1080,1920,3),np.uint8)
+    leak=video.LeakEvent(droplet_number=1,x_px=1000,y_px=600,confidence=.9,
+                         detection_time_s=1,confirmation_time_s=1.2)
+    preview=video._preview_image(frame,[leak],(400,100,1000,900),'ellipse')
+    assert preview.shape==(540,960,3)
+    assert tuple(preview[300,500])==(0,255,0)
+    assert leak.x_px==1000 and leak.y_px==600
+    assert not frame.any()
+
+
 def test_replay_records_three_distinct_leaks_and_keeps_recording(tmp_path, monkeypatch):
     source = tmp_path / "company_clip.mp4"
     writer = cv2.VideoWriter(str(source), cv2.VideoWriter_fourcc(*"mp4v"), 10, (160, 120))
@@ -39,7 +50,7 @@ def test_replay_records_three_distinct_leaks_and_keeps_recording(tmp_path, monke
     monkeypatch.setattr(video, "FrameDetector", Detector)
     outputs = OutputPaths.in_directory(tmp_path / "run")
     previews = []
-    result = analyze_video(source, outputs=outputs, settings=VideoSettings(roi=(8, 10, 130, 90)),
+    result = analyze_video(source, outputs=outputs, settings=VideoSettings(roi=(8, 10, 130, 90), require_new_appearance=False),
                            test_start_s=.2, on_preview=previews.append)
     assert result.status == "completed", result.errors
     assert [e.x_px for e in result.leaks] == [24, 58, 93]
@@ -87,7 +98,7 @@ def test_live_session_can_stop_and_save_outputs(tmp_path, monkeypatch):
     monkeypatch.setattr(video.cv2, "VideoCapture", Camera)
     monkeypatch.setattr(video, "FrameDetector", lambda *_: detect)
     session = start_test(0, outputs=OutputPaths.in_directory(tmp_path / "live"),
-                         settings=VideoSettings(confirmation_hits=1))
+                         settings=VideoSettings(confirmation_hits=1, auto_fabric_area=False, require_new_appearance=False))
     try:
         assert called.wait(3)
     finally:
