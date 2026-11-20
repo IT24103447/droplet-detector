@@ -3,6 +3,7 @@ __pycache__/
 .venv/
 data/raw/*
 data/results/*
+data/fabric_annotations/
 !data/raw/.gitkeep
 !data/results/.gitkeep
 *.mp4

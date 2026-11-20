@@ -1,0 +1,127 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <style>
+    body { margin: 0; color: #203547; font: 14px system-ui, sans-serif; }
+    canvas { display: block; max-width: 100%; max-height: 540px; width: auto; height: auto;
+      margin: 0 auto; border-radius: 8px; cursor: crosshair; touch-action: none; }
+    .tools { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; margin: 12px 0 4px; }
+    button { border: 1px solid #b8d2cf; background: white; color: #203547; padding: 8px 12px;
+      border-radius: 8px; font: inherit; cursor: pointer; }
+    button.primary { color: white; background: #087f79; border-color: #087f79; }
+    button:disabled { opacity: .5; cursor: default; }
+    output { margin-left: auto; }
+  </style>
+</head>
+<body>
+  <canvas aria-label="Video frame. Drag around each visible water droplet."></canvas>
+  <div class="tools">
+    <button type="button" class="primary" id="save">Save boxes</button>
+    <button type="button" id="dry">Save as dry</button>
+    <button type="button" id="undo">Undo</button>
+    <button type="button" id="clear">Clear boxes</button>
+    <output aria-live="polite"></output>
+  </div>
+  <script>
+    const canvas = document.querySelector("canvas");
+    const ctx = canvas.getContext("2d");
+    const status = document.querySelector("output");
+    const buttons = Object.fromEntries([...document.querySelectorAll("button")].map(b => [b.id, b]));
+    const image = new Image();
+    let frameId, boxes = [], history = [], start, end, locked = true;
+
+    function send(type, payload = {}) {
+      window.parent.postMessage({ isStreamlitMessage: true, type, ...payload }, "*");
+    }
+    function height() { send("streamlit:setFrameHeight", { height: document.body.scrollHeight + 4 }); }
+    function boxBetween(a, b) {
+      return [Math.min(a[0], b[0]), Math.min(a[1], b[1]), Math.abs(a[0] - b[0]), Math.abs(a[1] - b[1])];
+    }
+    function drawBox(box, number) {
+      const [x, y, w, h] = box.map((v, i) => v * (i % 2 ? canvas.height : canvas.width));
+      ctx.fillStyle = "rgba(0, 175, 165, 0.19)";
+      ctx.fillRect(x, y, w, h);
+      ctx.strokeStyle = "#002c31";
+      ctx.lineWidth = 4;
+      ctx.strokeRect(x, y, w, h);
+      ctx.strokeStyle = "#77f3e7";
+      ctx.lineWidth = 2;
+      ctx.strokeRect(x, y, w, h);
+      if (number) {
+        ctx.fillStyle = "#002c31";
+        ctx.fillRect(x, Math.max(y - 18, 0), 25, 18);
+        ctx.fillStyle = "white";
+        ctx.font = "12px system-ui";
+        ctx.fillText(number, x + 4, Math.max(y - 5, 13));
+      }
+    }
+    function redraw() {
+      if (image.complete && image.naturalWidth) {
+        ctx.drawImage(image, 0, 0);
+        boxes.forEach((box, i) => drawBox(box, i + 1));
+        if (start && end) drawBox(boxBetween(start, end));
+      }
+      buttons.save.disabled = locked || !boxes.length;
+      buttons.dry.disabled = locked || !!boxes.length;
+      buttons.undo.disabled = locked || !history.length;
+      buttons.clear.disabled = locked || !boxes.length;
+      status.value = boxes.length + (boxes.length === 1 ? " box" : " boxes");
+      height();
+    }
+    function point(event) {
+      const bounds = canvas.getBoundingClientRect();
+      return [(event.clientX - bounds.left) / bounds.width, (event.clientY - bounds.top) / bounds.height]
+        .map(v => Math.max(0, Math.min(1, v)));
+    }
+    canvas.addEventListener("pointerdown", event => {
+      if (locked || !image.complete || !image.naturalWidth || event.button !== 0) return;
+      canvas.setPointerCapture(event.pointerId);
+      start = end = point(event);
+    });
+    canvas.addEventListener("pointermove", event => {
+      if (start) { end = point(event); redraw(); }
+    });
+    canvas.addEventListener("pointerup", event => {
+      if (!start) return;
+      const box = boxBetween(start, point(event));
+      if (box[2] * canvas.width >= 2 && box[3] * canvas.height >= 2) {
+        history.push(boxes); boxes = [...boxes, box];
+      }
+      start = end = null;
+      redraw();
+    });
+    canvas.addEventListener("pointercancel", () => { start = end = null; redraw(); });
+    buttons.undo.onclick = () => { boxes = history.pop() || boxes; redraw(); };
+    buttons.clear.onclick = () => { history.push(boxes); boxes = []; redraw(); };
+    function save(dry) {
+      send("streamlit:setComponentValue", { dataType: "json",
+        value: { frameId, boxes, dry, id: Date.now() + ":" + Math.random() } });
+    }
+    buttons.save.onclick = () => save(false);
+    buttons.dry.onclick = () => save(true);
+    window.addEventListener("message", ({ data, source }) => {
+      if (source !== window.parent || data?.type !== "streamlit:render") return;
+      const args = data.args;
+      locked = args.locked || data.disabled;
+      if (frameId !== args.frame_id) {
+        frameId = args.frame_id;
+        start = end = null;
+        boxes = args.boxes;
+        history = [];
+        image.onload = () => {
+          canvas.width = image.naturalWidth;
+          canvas.height = image.naturalHeight;
+          redraw();
+        };
+        image.src = args.image;
+      }
+      redraw();
+    });
+    window.addEventListener("resize", height);
+    send("streamlit:componentReady", { apiVersion: 1 });
+    redraw();
+  </script>
+</body>
+</html>

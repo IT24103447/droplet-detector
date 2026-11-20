@@ -38,13 +38,17 @@ pip install -e ".[dev]"
 
 ### Launch Web UI Dashboard
 
-Label training photos, train the local model, and detect droplets in one uploaded photo:
+Analyze recorded video, monitor a USB camera connected to the computer hosting
+the dashboard, or train a selectable fabric model from a labelled CVAT dataset:
 
 ```bash
 python scripts/run_ui.py
 # or
 streamlit run app.py
 ```
+
+See [Video library and dashboard guide](docs/video_library.md) for upload,
+camera operation, model training, and the hydrotester API.
 
 ### Train the Single-Image Droplet Model
 
@@ -70,10 +74,10 @@ pip install -e ".[ml]"
 python scripts/train_detection.py --data datasets/droplets.yaml
 ```
 
-Copy the resulting `best.pt` model to `models/droplet-seg.pt`. The dashboard's
-**Detect One Photo** tab then identifies droplets from a single image without
-a dry reference. The same detector is the one that will run on each live
-camera frame before multi-frame leak tracking is added.
+Copy the resulting `best.pt` model to `models/droplet-seg.pt` to use it as
+the dashboard's general detection model. Both recorded and live sessions use
+the frame detector and track leak positions across frames without a separate
+dry reference photo.
 
 ### Run Detection on a Fabric (CLI)
 

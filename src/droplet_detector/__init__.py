@@ -5,7 +5,8 @@ __version__ = "0.1.0"
 from .config import DropletDetectorConfig, ROI
 from .models import DropletDetection, FabricAccuracyReport
 from .pipeline import detect_droplets_in_image
-from .single_image import detect_droplets_in_single_image, ModelNotReadyError
+from .single_image import FrameDetector, detect_droplets_in_single_image, ModelNotReadyError
+from .video import LeakEvent, LiveTest, OutputPaths, TestResult, VideoSettings, analyze_video, start_test
 
 __all__ = [
     "DropletDetectorConfig",
@@ -15,4 +16,12 @@ __all__ = [
     "detect_droplets_in_image",
     "detect_droplets_in_single_image",
     "ModelNotReadyError",
+    "FrameDetector",
+    "LeakEvent",
+    "LiveTest",
+    "OutputPaths",
+    "TestResult",
+    "VideoSettings",
+    "analyze_video",
+    "start_test",
 ]

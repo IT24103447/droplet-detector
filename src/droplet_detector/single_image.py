@@ -9,6 +9,7 @@ from __future__ import annotations
 from pathlib import Path
 
 import cv2
+import numpy as np
 
 from .models import DropletDetection
 
@@ -33,6 +34,38 @@ def detect_droplets_in_single_image(
     model_path = Path(model_path)
     if not image_path.is_file():
         raise FileNotFoundError(f"Could not read input image: {image_path}")
+    detector = FrameDetector(model_path, confidence_threshold)
+    image = cv2.imread(str(image_path))
+    if image is None:
+        raise FileNotFoundError(f"Could not read input image: {image_path}")
+    return detector(image)
+
+
+class FrameDetector:
+    """Load weights once and find droplet candidates in BGR frames."""
+
+    def __init__(self, model_path: str | Path, confidence_threshold: float = 0.5):
+        self.model = _load_model(Path(model_path))
+        self.confidence_threshold = confidence_threshold
+
+    def __call__(self, frame: np.ndarray) -> list[DropletDetection]:
+        result = self.model.predict(
+            source=frame, conf=self.confidence_threshold, verbose=False
+        )[0]
+        detections = []
+        for number, box in enumerate(result.boxes if result.boxes is not None else (), start=1):
+            x1, y1, x2, y2 = (float(value) for value in box.xyxy[0].tolist())
+            detections.append(DropletDetection(
+                droplet_number=number,
+                x_px=(x1 + x2) / 2,
+                y_px=(y1 + y2) / 2,
+                radius_px=max(x2 - x1, y2 - y1) / 2,
+                confidence=float(box.conf[0]),
+            ))
+        return detections
+
+
+def _load_model(model_path: Path):
     if not model_path.is_file():
         raise ModelNotReadyError(
             "No trained droplet model was found. Label fabric images and run "
@@ -47,26 +80,4 @@ def detect_droplets_in_single_image(
             'with: pip install -e ".[ml]"'
         ) from exc
 
-    image = cv2.imread(str(image_path))
-    if image is None:
-        raise FileNotFoundError(f"Could not read input image: {image_path}")
-
-    result = YOLO(str(model_path)).predict(
-        source=image, conf=confidence_threshold, verbose=False
-    )[0]
-    if result.boxes is None:
-        return []
-
-    detections: list[DropletDetection] = []
-    for number, box in enumerate(result.boxes, start=1):
-        x1, y1, x2, y2 = (float(value) for value in box.xyxy[0].tolist())
-        detections.append(
-            DropletDetection(
-                droplet_number=number,
-                x_px=(x1 + x2) / 2,
-                y_px=(y1 + y2) / 2,
-                radius_px=max(x2 - x1, y2 - y1) / 2,
-                confidence=float(box.conf[0]),
-            )
-        )
-    return detections
+    return YOLO(str(model_path))
