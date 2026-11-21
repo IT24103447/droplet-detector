@@ -8,7 +8,6 @@ from dataclasses import dataclass
 from pathlib import Path
 from threading import Event
 from typing import Callable, Literal
-from functools import lru_cache
 
 import cv2
 import numpy as np
@@ -18,7 +17,7 @@ from .leak_tracking import LeakTracker
 from .models import DropletDetection
 from .single_image import FrameDetector
 from .vision_language import REQUEST_TIMEOUT_S, VisionLanguageDetector
-from .fabric_area import OpeningFrameEvidence, find_fabric_area
+from .fabric_area import OpeningFrameEvidence, crop_fabric, find_fabric_area
 from .surface_water import SurfaceWaterDetector
 
 
@@ -41,6 +40,7 @@ class VideoSettings:
     auto_fabric_area: bool = True
     require_new_appearance: bool = True
     detect_surface_water: bool = True
+    analysis_fps: float | None = None
 
     def __post_init__(self):
         if self.detector_backend not in ("yolo", "vision") or self.roi_shape not in ("rectangle", "ellipse"):
@@ -53,6 +53,8 @@ class VideoSettings:
             raise ValueError("Tracking distance and candidate gap must be finite and positive")
         if self.frame_rate is not None and not (math.isfinite(self.frame_rate) and self.frame_rate > 0):
             raise ValueError("Frame rate must be finite and positive")
+        if self.analysis_fps is not None and not (math.isfinite(self.analysis_fps) and self.analysis_fps > 0):
+            raise ValueError("Analysis frame rate must be finite and positive")
         if self.resolution is not None and min(self.resolution) <= 0:
             raise ValueError("Resolution must be positive")
         if self.roi is not None:
@@ -173,27 +175,12 @@ def _preview_image(frame: np.ndarray, leaks: list[LeakEvent], roi, roi_shape, su
     return _annotate(small,markers,area,roi_shape,surface_water)
 
 
-@lru_cache(maxsize=8)
-def _ellipse_outside(height: int, width: int) -> np.ndarray:
-    yy, xx = np.ogrid[:height, :width]
-    mask = ((2*xx+1)/width-1)**2 + ((2*yy+1)/height-1)**2 > 1
-    mask.setflags(write=False)
-    return mask
-
-
 def _detect_frame(detector: VideoDetector, frame: np.ndarray, roi: tuple[int, int, int, int] | None,
-                  roi_shape: Literal["rectangle", "ellipse"] = "rectangle",
-                  evidence: OpeningFrameEvidence | None = None) -> list[DropletDetection]:
+                  roi_shape: Literal["rectangle", "ellipse"] = "rectangle") -> list[DropletDetection]:
     if roi is None:
-        detections = detector(frame)
-        return evidence.filter(frame, detections) if evidence else detections
+        return detector(frame)
     x, y, w, h = roi
-    if x + w > frame.shape[1] or y + h > frame.shape[0]:
-        raise ValueError("The fabric ROI extends outside the captured frame")
-    crop = frame[y:y + h, x:x + w]
-    if roi_shape == "ellipse":
-        crop = crop.copy()
-        crop[_ellipse_outside(h,w)] = 128
+    crop = crop_fabric(frame, roi, ellipse=roi_shape == "ellipse")
 
     detections = []
     for d in detector(crop):
@@ -209,13 +196,15 @@ def _detect_frame(detector: VideoDetector, frame: np.ndarray, roi: tuple[int, in
                     + (2*(d.y_px+d.radius_px*dy)/h-1)**2) > 1 for dx,dy in corners):
                 continue
         detections.append(d.model_copy(update={"x_px":d.x_px+x, "y_px":d.y_px+y}))
-    return evidence.filter(frame, detections) if evidence else detections
+    return detections
 
 
 def _run(source: str | int, outputs: OutputPaths, settings: VideoSettings,
          stop: Event, started_at: float, test_start_s: float,
          detector: VideoDetector | None = None,
-         on_preview: Callable[[VideoPreview], None] | None = None) -> TestResult:
+         on_preview: Callable[[VideoPreview], None] | None = None,
+         on_progress: Callable[[float], None] | None = None,
+         use_source_recording: bool = False) -> TestResult:
     result = TestResult(status="completed")
     capture = None
     writer = None
@@ -230,15 +219,21 @@ def _run(source: str | int, outputs: OutputPaths, settings: VideoSettings,
     evidence = None
     water_detector = None
     vision = settings.detector_backend == "vision"
+    interval = (settings.vision_interval_s if vision else
+                1 / settings.analysis_fps if settings.analysis_fps is not None else 0.0)
     roi, roi_shape = settings.roi, settings.roi_shape
-    gap = settings.max_candidate_gap_s
+    gap = max(settings.max_candidate_gap_s, 2 * interval)
     if vision:
-        gap = max(gap, 2 * settings.vision_interval_s)
         if live:
             gap = max(gap, REQUEST_TIMEOUT_S + settings.vision_interval_s)
         result.warnings.append(
             f"Vision analysis samples at least {settings.vision_interval_s:g}s apart and uses the opening "
             "frame as its reference. Timestamps locate the first sampled observation."
+        )
+    elif settings.analysis_fps is not None:
+        result.warnings.append(
+            f"Analysis examines up to {settings.analysis_fps:g} frames per video second. "
+            "Very brief droplets can fall between samples."
         )
     tracker = LeakTracker(settings.confirmation_hits, settings.match_distance_px, gap)
 
@@ -264,6 +259,12 @@ def _run(source: str | int, outputs: OutputPaths, settings: VideoSettings,
             _save_image(path, _annotate(frame, result.leaks, roi, roi_shape))
             event.image_filename = str(path)
 
+    def find_candidates(frame: np.ndarray, area, shape, elapsed: float):
+        if len(result.leaks) >= 3:
+            return []
+        candidates = _detect_frame(detector, frame, area, shape)
+        return evidence.observe(frame, candidates, elapsed) if evidence else candidates
+
     def detect_live_frame(frame: np.ndarray, elapsed: float):
         # Keep rim detection with inference, off the live capture/recording loop.
         nonlocal roi, roi_shape, area_failures
@@ -275,8 +276,7 @@ def _run(source: str | int, outputs: OutputPaths, settings: VideoSettings,
                 area_failures += 1
                 return [], None
             roi, roi_shape = current_roi, "ellipse"
-        detections = (_detect_frame(detector, frame, current_roi, roi_shape, evidence)
-                      if len(result.leaks) < 3 else [])
+        detections = find_candidates(frame, current_roi, roi_shape, elapsed)
         water = water_detector.observe(frame, elapsed, current_roi) if water_detector else None
         return detections, water
 
@@ -313,6 +313,7 @@ def _run(source: str | int, outputs: OutputPaths, settings: VideoSettings,
         frame_index = 0
         last_source_time = -1.0
         last_preview = -math.inf
+        preview_interval = .1 if on_preview is not None else .2
         next_inference = 0.0
         inference: tuple[Future, np.ndarray, float] | None = None
         while not stop.is_set():
@@ -340,17 +341,20 @@ def _run(source: str | int, outputs: OutputPaths, settings: VideoSettings,
             frame_index += 1
             if elapsed < 0:
                 continue
+            first_frame = last_frame is None
+            needs_water = water_detector is not None and not water_detector.confirmed
+            sample_due = elapsed >= next_inference and (len(result.leaks) < 3 or needs_water)
             area_valid = True
-            if settings.auto_fabric_area and settings.roi is None and (not live or writer is None):
+            if settings.auto_fabric_area and settings.roi is None and (first_frame or (not live and sample_due)):
                 try:
                     roi = find_fabric_area(frame)
                     roi_shape = "ellipse"
                 except ValueError:
-                    if writer is None:
+                    if first_frame:
                         raise
                     area_failures += 1
                     area_valid = False
-            if writer is None:
+            if first_frame:
                 height, width = frame.shape[:2]
                 if settings.require_new_appearance and not vision:
                     evidence = OpeningFrameEvidence(frame.copy(), roi or (0,0,width,height))
@@ -359,11 +363,13 @@ def _run(source: str | int, outputs: OutputPaths, settings: VideoSettings,
                     water_detector.max_gap_s = max(.8, 2*settings.vision_interval_s) if vision else .8
                 if live and settings.resolution and (width, height) != settings.resolution:
                     result.warnings.append(f"Camera captured {width}x{height} instead of requested resolution.")
-                writer = cv2.VideoWriter(str(video_path), cv2.VideoWriter_fourcc(*"mp4v"), fps, (width, height))
-                if not writer.isOpened():
-                    raise OSError(f"Could not open output video: {video_path}")
+                if not use_source_recording:
+                    writer = cv2.VideoWriter(str(video_path), cv2.VideoWriter_fourcc(*"mp4v"), fps, (width, height))
+                    if not writer.isOpened():
+                        raise OSError(f"Could not open output video: {video_path}")
             result.fabric_roi, result.fabric_roi_shape = roi, roi_shape if roi else None
-            writer.write(frame)
+            if writer is not None:
+                writer.write(frame)
             wrote_video = True
             last_frame = frame
             if inference is not None and inference[0].done():
@@ -373,25 +379,25 @@ def _run(source: str | int, outputs: OutputPaths, settings: VideoSettings,
             needs_water = water_detector is not None and not water_detector.confirmed
             if area_valid and (len(result.leaks) < 3 or needs_water) and elapsed >= next_inference:
                 if executor is None:
-                    detections = (_detect_frame(detector, frame, roi, roi_shape, evidence)
-                                  if len(result.leaks) < 3 else [])
+                    detections = find_candidates(frame, roi, roi_shape, elapsed)
                     water = water_detector.observe(frame, elapsed, roi) if water_detector else None
                     process((detections, water), frame, elapsed)
-                    if vision:
-                        observations += 1
-                        next_inference = elapsed + settings.vision_interval_s
+                    observations += 1
+                    next_inference = elapsed + interval
                 elif inference is None:
                     inference = (executor.submit(detect_live_frame, frame, elapsed), frame, elapsed)
-                    if vision:
-                        observations += 1
-                        next_inference = elapsed + settings.vision_interval_s
+                    observations += 1
+                    next_inference = elapsed + interval
                 else:
                     skipped += 1
-            if on_preview is not None and acquired_at - last_preview >= 0.1:
-                preview = _preview_image(frame, result.leaks, roi, roi_shape, result.surface_water)
-                encoded, jpg = cv2.imencode(".jpg", preview)
-                if encoded:
-                    on_preview(VideoPreview(jpg.tobytes(), elapsed, len(result.leaks), result.surface_water is not None))
+            if (on_preview is not None or on_progress is not None) and acquired_at - last_preview >= preview_interval:
+                if on_progress is not None:
+                    on_progress(elapsed)
+                if on_preview is not None:
+                    preview = _preview_image(frame, result.leaks, roi, roi_shape, result.surface_water)
+                    encoded, jpg = cv2.imencode(".jpg", preview)
+                    if encoded:
+                        on_preview(VideoPreview(jpg.tobytes(), elapsed, len(result.leaks), result.surface_water is not None))
                 last_preview = acquired_at
         if inference is not None:
             future, frame, elapsed = inference
@@ -417,7 +423,7 @@ def _run(source: str | int, outputs: OutputPaths, settings: VideoSettings,
     if evidence is not None and evidence.motion_rejections:
         result.warnings.append(f"Rejected candidates on {evidence.motion_rejections} frames with camera/fabric movement.")
     if evidence is not None:
-        result.warnings.append("New-leak verification used the opening frame as its dry reference; pre-existing droplets may be ignored.")
+        result.warnings.append("New-leak verification compared with the opening frame and recent frames without droplet candidates.")
     if water_detector is not None:
         result.warnings.append("Spreading-water analysis compares with the opening frame, which should be dry. "
                                "Its timestamp is the first persistent curved-boundary observation, not the exact leak onset. "
@@ -425,10 +431,11 @@ def _run(source: str | int, outputs: OutputPaths, settings: VideoSettings,
     if vision and wrote_video and observations < 2:
         result.warnings.append("The recording ended before a frame could be compared with the opening frame.")
     if wrote_video:
-        if video_path.is_file() and video_path.stat().st_size:
-            result.video_filename = str(video_path)
+        recording = Path(source) if use_source_recording else video_path
+        if recording.is_file() and recording.stat().st_size:
+            result.video_filename = str(recording)
         else:
-            result.errors.append(f"Recording could not be saved: {video_path}")
+            result.errors.append(f"Recording could not be saved: {recording}")
             result.status = "error"
     if last_frame is not None:
         try:
@@ -450,12 +457,15 @@ def _run(source: str | int, outputs: OutputPaths, settings: VideoSettings,
 
 def analyze_video(video_path: str | Path, *, outputs: OutputPaths,
                   settings: VideoSettings = VideoSettings(), test_start_s: float = 0.0,
-                  on_preview: Callable[[VideoPreview], None] | None = None) -> TestResult:
-    """Replay a video, reporting up to three beads and a separate water-film event."""
+                  on_preview: Callable[[VideoPreview], None] | None = None,
+                  on_progress: Callable[[float], None] | None = None,
+                  use_source_recording: bool = False) -> TestResult:
+    """Replay a video; an untrimmed run can retain the saved source as its recording."""
     if not math.isfinite(test_start_s) or test_start_s < 0:
         raise ValueError("Test start must be a finite, non-negative video timestamp")
     return _run(str(Path(video_path).resolve()), outputs, settings, Event(), time.monotonic(),
-                test_start_s, on_preview=on_preview)
+                test_start_s, on_preview=on_preview, on_progress=on_progress,
+                use_source_recording=use_source_recording and test_start_s == 0)
 
 
 class LiveTest:

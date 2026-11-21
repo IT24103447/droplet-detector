@@ -3,6 +3,7 @@ import json
 from types import SimpleNamespace
 
 import numpy as np
+import pytest
 
 from droplet_detector import fast_inference, single_image
 from droplet_detector.fast_inference import OnnxDetector, fingerprint, load_cached_detector
@@ -62,14 +63,15 @@ def test_frame_detector_uses_verified_runtime_and_can_force_original(tmp_path,mo
     assert original.backend=='pytorch' and original(np.zeros((2,2,3),np.uint8))==[]
 
 
-def test_unavailable_gpu_keeps_verified_cpu_runtime(tmp_path,monkeypatch):
+@pytest.mark.parametrize("prefer_gpu", [True, False])
+def test_load_prefers_verified_cpu_when_gpu_disabled_or_unavailable(tmp_path,monkeypatch,prefer_gpu):
     source=tmp_path/'model.pt';source.write_bytes(b'weights')
     monkeypatch.setattr(fast_inference,'CACHE_ROOT',tmp_path/'cache')
     digest=fingerprint(source);folder=fast_inference.CACHE_ROOT/digest;folder.mkdir(parents=True)
     export=folder/'model.onnx';export.write_bytes(b'export')
     (folder/'source.json').write_text(json.dumps(dict(source_sha256=digest,onnx_sha256=fingerprint(export),
         precision='float32',imgsz=640,dynamic=True,parity_checked=True,gpu_parity_checked=True,
-        gpu_provider='DmlExecutionProvider',gpu_device_id=1)))
+        gpu_provider='DmlExecutionProvider',gpu_device_id=1,gpu_preferred=prefer_gpu)))
     calls=[];cpu=object()
     def runtime(*_,provider='CPUExecutionProvider',**__):
         calls.append(provider)
@@ -77,4 +79,4 @@ def test_unavailable_gpu_keeps_verified_cpu_runtime(tmp_path,monkeypatch):
         return cpu
     monkeypatch.setattr(fast_inference,'OnnxDetector',runtime)
     assert load_cached_detector(source) is cpu
-    assert calls==['DmlExecutionProvider','CPUExecutionProvider']
+    assert calls == (['DmlExecutionProvider', 'CPUExecutionProvider'] if prefer_gpu else ['CPUExecutionProvider'])

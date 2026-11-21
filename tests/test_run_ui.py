@@ -1,4 +1,5 @@
 """The system Python must launch the dashboard with project dependencies."""
+import os
 import tempfile
 import unittest
 from pathlib import Path
@@ -23,6 +24,7 @@ class LauncherTests(unittest.TestCase):
             self.assertEqual(Path(args[0][0]), interpreter)
             self.assertEqual(args[0][1:4], ["-m", "streamlit", "run"])
             self.assertEqual(kwargs["cwd"], root)
+            self.assertEqual(Path(kwargs["env"]["PYTHONPATH"].split(os.pathsep)[0]), root / "src")
 
     def test_falls_back_to_current_interpreter_without_project_environment(self):
         with tempfile.TemporaryDirectory() as directory:

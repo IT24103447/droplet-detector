@@ -4,6 +4,7 @@
 Usage:
     python scripts/run_ui.py
 """
+import os
 import sys
 import subprocess
 from pathlib import Path
@@ -33,9 +34,13 @@ def main() -> None:
         str(app_path),
         "--server.headless=true",
     ]
+    environment = os.environ.copy()
+    source = str(repo_root / "src")
+    prior_path = environment.get("PYTHONPATH")
+    environment["PYTHONPATH"] = source + os.pathsep + prior_path if prior_path else source
     print(f"Starting Droplet Detector Dashboard: {' '.join(cmd)}", flush=True)
     try:
-        subprocess.run(cmd, check=True, cwd=repo_root)
+        subprocess.run(cmd, check=True, cwd=repo_root, env=environment)
     except KeyboardInterrupt:
         print("\nStopping Dashboard.")
 

@@ -109,6 +109,39 @@ def test_live_session_can_stop_and_save_outputs(tmp_path, monkeypatch):
     assert result.video_filename is not None
 
 
+def test_sampled_replay_reports_source_time_and_reuses_saved_upload(tmp_path, monkeypatch):
+    source = tmp_path / "uploaded.mp4"
+    writer = cv2.VideoWriter(str(source), cv2.VideoWriter_fourcc(*"mp4v"), 10, (160, 120))
+    assert writer.isOpened()
+    for index in range(12):
+        writer.write(np.full((120, 160, 3), 15 * index, dtype=np.uint8))
+    writer.release()
+
+    sampled = []
+
+    def detect(frame):
+        sampled.append(round(float(frame.mean()) / 15))
+        if len(sampled) == 1:
+            return []
+        return [DropletDetection(droplet_number=1, x_px=40, y_px=50,
+                                 radius_px=5, confidence=.9)]
+
+    monkeypatch.setattr(video, "FrameDetector", lambda *_: detect)
+    outputs = OutputPaths.in_directory(tmp_path / "run")
+    progress = []
+    result = analyze_video(source, outputs=outputs, settings=VideoSettings(
+        analysis_fps=4, confirmation_hits=2, auto_fabric_area=False, require_new_appearance=False,
+    ), use_source_recording=True, on_progress=progress.append)
+
+    assert result.status == "completed", result.errors
+    assert sampled == [0, 3, 6, 9]
+    assert result.leaks[0].detection_time_s == pytest.approx(.3)
+    assert result.leaks[0].confirmation_time_s == pytest.approx(.6)
+    assert result.video_filename == str(source.resolve())
+    assert not outputs.video.exists()
+    assert progress[0] == 0
+
+
 def test_vision_replay_uses_opening_image_and_fabric_ellipse(tmp_path, monkeypatch):
     source = tmp_path / "vision.mp4"
     writer = cv2.VideoWriter(str(source), cv2.VideoWriter_fourcc(*"mp4v"), 10, (160, 120))

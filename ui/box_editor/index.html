@@ -58,16 +58,17 @@
       }
     }
     function redraw() {
-      if (image.complete && image.naturalWidth) {
+      const ready = canvas.dataset.frameId === frameId && image.complete && image.naturalWidth;
+      if (ready) {
         ctx.drawImage(image, 0, 0);
         boxes.forEach((box, i) => drawBox(box, i + 1));
         if (start && end) drawBox(boxBetween(start, end));
       }
-      buttons.save.disabled = locked || !boxes.length;
-      buttons.dry.disabled = locked || !!boxes.length;
-      buttons.undo.disabled = locked || !history.length;
-      buttons.clear.disabled = locked || !boxes.length;
-      status.value = boxes.length + (boxes.length === 1 ? " box" : " boxes");
+      buttons.save.disabled = !ready || locked || !boxes.length;
+      buttons.dry.disabled = !ready || locked || !!boxes.length;
+      buttons.undo.disabled = !ready || locked || !history.length;
+      buttons.clear.disabled = !ready || locked || !boxes.length;
+      status.value = ready ? boxes.length + (boxes.length === 1 ? " box" : " boxes") : "Loading frame…";
       height();
     }
     function point(event) {
@@ -76,7 +77,7 @@
         .map(v => Math.max(0, Math.min(1, v)));
     }
     canvas.addEventListener("pointerdown", event => {
-      if (locked || !image.complete || !image.naturalWidth || event.button !== 0) return;
+      if (locked || canvas.dataset.frameId !== frameId || event.button !== 0) return;
       canvas.setPointerCapture(event.pointerId);
       start = end = point(event);
     });
@@ -107,14 +108,18 @@
       locked = args.locked || data.disabled;
       if (frameId !== args.frame_id) {
         frameId = args.frame_id;
+        delete canvas.dataset.frameId;
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
         start = end = null;
         boxes = args.boxes;
         history = [];
         image.onload = () => {
+          canvas.dataset.frameId = frameId;
           canvas.width = image.naturalWidth;
           canvas.height = image.naturalHeight;
           redraw();
         };
+        image.onerror = () => { status.value = "Could not display this frame."; };
         image.src = args.image;
       }
       redraw();

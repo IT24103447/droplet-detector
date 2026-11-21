@@ -96,7 +96,8 @@ def load_cached_detector(source: Path) -> OnnxDetector | None:
                 or info.get("precision") != "float32" or info.get("imgsz") != 640 or info.get("dynamic") is not True
                 or info.get("onnx_sha256") != fingerprint(exported)):
             return None
-        if info.get("gpu_parity_checked") and info.get("gpu_provider") == "DmlExecutionProvider":
+        if (info.get("gpu_preferred", True) and info.get("gpu_parity_checked")
+                and info.get("gpu_provider") == "DmlExecutionProvider"):
             try:
                 return OnnxDetector(exported,nms_iou=info.get("nms_iou",.5),
                                     provider="DmlExecutionProvider",device_id=info["gpu_device_id"])

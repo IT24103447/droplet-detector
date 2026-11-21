@@ -7,6 +7,19 @@ import cv2
 import numpy as np
 
 
+def video_info(path: Path) -> tuple[int, float]:
+    """Read the frame count and nominal frame rate for timeline navigation."""
+    capture = cv2.VideoCapture(str(path))
+    try:
+        count = capture.get(cv2.CAP_PROP_FRAME_COUNT)
+        fps = capture.get(cv2.CAP_PROP_FPS)
+        if not capture.isOpened() or not math.isfinite(count) or count < 1 or not math.isfinite(fps) or fps <= 0:
+            raise ValueError("Could not read the recording's timeline.")
+        return int(count), fps
+    finally:
+        capture.release()
+
+
 def read_frame(path: Path, index: int) -> tuple[np.ndarray, float]:
     capture = cv2.VideoCapture(str(path))
     try:

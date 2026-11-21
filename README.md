@@ -39,16 +39,19 @@ pip install -e ".[dev]"
 ### Launch Web UI Dashboard
 
 Analyze recorded video, monitor a USB camera connected to the computer hosting
-the dashboard, or train a selectable fabric model from a labelled CVAT dataset:
+the dashboard, or fine-tune the shared detector using saved video-frame labels
+or a labelled CVAT dataset. Install the ML dependencies for those workflows.
 
 ```bash
+python -m pip install -e ".[ml]"
 python scripts/run_ui.py
-# or
-streamlit run app.py
 ```
 
 See [Video library and dashboard guide](docs/video_library.md) for upload,
 camera operation, model training, and the hydrotester API.
+The [demo recordings](demo-videos/) include five with visible droplets and five
+with no visible droplets. The [training data](datasets/hydrotester/README.md)
+documents the examples used to train the bundled checkpoint.
 
 ### Train the Single-Image Droplet Model
 
@@ -74,10 +77,11 @@ pip install -e ".[ml]"
 python scripts/train_detection.py --data datasets/droplets.yaml
 ```
 
-Copy the resulting `best.pt` model to `models/droplet-seg.pt` to use it as
-the dashboard's general detection model. Both recorded and live sessions use
-the frame detector and track leak positions across frames without a separate
-dry reference photo.
+The dashboard uses its latest validated local checkpoint when available.
+Otherwise it uses the bundled `models/fabrics/Visible_Leaks_Trained.pt` checkpoint
+and falls back to `models/droplet-seg.pt` if needed. Recorded and live sessions
+track leak positions across frames. Both take their dry baseline from the
+opening frame when that check is enabled.
 
 ### Run Detection on a Fabric (CLI)
 

@@ -78,6 +78,22 @@ def test_small_candidate_box_on_a_large_changed_pool_is_rejected():
     assert gate.filter(after,[droplet(100,100,8)])==[]
 
 
+def test_settled_reference_recovers_a_new_bead_after_a_broad_light_change():
+    opening = np.full((200, 200, 3), 80, np.uint8)
+    stable_light = opening.copy()
+    stable_light[:, :85] += 45
+    changed = stable_light.copy()
+    cv2.circle(changed, (60, 100), 7, (215, 215, 215), -1)
+    bead = droplet(60, 100, 8)
+    gate = OpeningFrameEvidence(opening, (0, 0, 200, 200))
+    assert gate.observe(opening, [], 0) == []
+    assert gate.filter(changed, [bead]) == []
+    assert gate.observe(stable_light, [], 6) == []
+    assert gate.observe(stable_light, [bead], 7) == []
+    assert gate.observe(changed, [bead.model_copy(update={"confidence": .35})], 8) == []
+    assert gate.observe(changed, [bead], 8) == [bead]
+
+
 def test_video_does_not_fall_back_to_unrestricted_detection(tmp_path,monkeypatch):
     source=tmp_path/'no_rim.mp4'
     writer=cv2.VideoWriter(str(source),cv2.VideoWriter_fourcc(*'mp4v'),10,(160,120))

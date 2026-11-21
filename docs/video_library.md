@@ -29,13 +29,14 @@ counting a spreading pool as an individual bead. This assumes the test starts wi
 off **Ignore marks already present in the opening frame** if the video already
 contains droplets; the CLI equivalent is `--include-opening-droplets`. Significant
 movement rejects candidates, and the result includes a movement warning.
+When a broad change masks a strong candidate, the detector can recheck it
+against a recent frame without candidates. That check excludes positions the
+model already proposed in the opening frame.
 
-The local **Reviewed specimen model (experimental)** is offered first when its
-trained weights exist. It still misses droplets in the small reviewed test set;
-these area/evidence checks do not establish general counting accuracy. Both YOLO
-and the optional vision-language backend use the same area restriction. The
-vision-language option requires Ollama and its image-capable model running
-locally; it is not selected automatically or used as an unavailable fallback.
+The dashboard uses one droplet model for recordings and the live camera. It uses
+the latest successful dashboard training run when available, then the trained
+visible-leak weights, then the general weights shipped with the repository. Both
+YOLO and the command-line vision-language backend use the same area restriction.
 
 Results JSON includes `fabric_roi` and `fabric_roi_shape` for checking calibration.
 
@@ -94,10 +95,11 @@ available for the exact selected weights. Verified Windows GPU execution uses
 DirectML, with the verified CPU runtime available if that adapter cannot load.
 This runs the same 640-pixel YOLO
 network with the original confidence, suppression and coordinate rules, without
-the slower general-purpose prediction wrapper. Every video frame is still
-analyzed; recording frame rate, temporal confirmation, fabric boundary and
-opening-frame/pool checks remain enabled. The preview refreshes up to ten times
-per second, and immutable masks and opening-frame computations are cached.
+the slower general-purpose prediction wrapper. Temporal confirmation, the fabric
+boundary, and opening-frame/pool checks remain enabled. The dashboard normally
+examines up to six frames per video second. Enable **Analyze every frame** under
+**Detection settings** when short-lived events are important. The Python and
+command-line interfaces analyze every frame by default for recorded video.
 
 Exports are stored in `data/results/inference_cache/`, indexed by the source
 weights' SHA-256. The original `.pt` files remain available for training. A
@@ -129,14 +131,12 @@ see `data/results/performance_20261121/video_benchmark.json` for the measurement
 
 ## Use the dashboard
 
-Run `python scripts/run_ui.py` from the project folder. **Recorded video**
-accepts a local recording and displays the detection map, event timeline,
-position plot and results. **Live camera** uses a USB camera attached to the
-computer hosting the app. Press **Stop test and save results** to finalize
-the files. **Fabric models** trains a separate selectable profile. Choose
-**Label video frames** to work entirely in the dashboard, or import an
-existing labelled CVAT YOLO Detection ZIP. The general model remains
-available for detection.
+Run `python scripts/run_ui.py` from the project folder. In **Recorded video**,
+an uploaded H.264 MP4 or WebM can be played and scrubbed as soon as the upload
+finishes. **Analyze video** runs detection in the background with a separate
+progress bar. Results include the detection map, event timeline, and position
+plot. **Live camera** uses a USB camera attached to the computer hosting the app.
+Press **Stop test and save results** to finalize the files.
 
 ### Try the local vision-language detector
 
@@ -147,46 +147,37 @@ download the image-capable model once:
 ollama pull qwen3-vl:2b-instruct
 ```
 
-In **Recorded video** or **Live camera**, select **Local vision-language
-model (experimental)**. Start the test with dry fabric in view. The app takes
-its reference from the opening frame automatically. It asks the model to mark
-new raised water beads, then tracks the returned positions across sampled
-frames. It sends images to Ollama on the same computer. To force Ollama itself
-to operate offline, start it with `OLLAMA_NO_CLOUD=1`.
-
-With the company camera framing, the default oval covers the central specimen.
-Use **Detection settings → Set a custom fabric area** if the camera is
-positioned differently. The area uses full-frame pixel coordinates. The
-**Seconds between samples** setting controls the time resolution of recorded
-analysis. The reported time is the first sampled observation. On a live camera,
-actual observations can be farther apart if the model is still processing.
-Confirm the timing, false positives, duplicate counts, and misses on the actual
-machine before relying on this mode.
-
 For the command line, add `--detector vision --vision-interval 2` to either
 video command. For a custom oval, add `--roi X Y WIDTH HEIGHT --roi-shape ellipse`.
 Python callers can set `VideoSettings(detector_backend="vision", match_distance_px=30)`.
 To analyze a single BGR image, call `VisionLanguageDetector()(image)`.
+Start with a dry specimen so the vision backend can use the first frame as its
+reference. To keep Ollama offline, start it with `OLLAMA_NO_CLOUD=1`.
 
 ### Label video frames in the dashboard
 
-1. Enter a fabric profile name and choose **Training**. Upload a recording
-   and click **Open in frame editor**.
-2. Jump to a frame or use **Previous frame** and **Next frame**. Drag one
-   tight rectangle around each visible droplet and click **Save boxes**.
+1. Open **Train the Model** and upload a recording. The frame editor opens
+   as soon as the upload is ready.
+2. Use **Jump to time (seconds)**, **Back 5 s**, or **Forward 5 s** to move
+   through the recording. Use **Previous frame** and **Next frame** for exact
+   labels. Drag one tight rectangle around each visible droplet and click **Save boxes**.
    For a frame with no visible water droplets, click **Save as dry**.
-3. Save selected frames with a mix of early droplets, growth, and dry
-   fabric. Only saved frames enter the dataset. Choose **Validation** and
-   open a different recording of the same fabric. Label representative
-   frames there too. The same uploaded recording cannot be saved in both
-   splits.
-4. Click **Train fabric model**. When training finishes, the profile appears
-   in the model picker for recorded and camera tests. Repeat with a new
-   profile name for a different fabric. Hold back separate runs for final
-   accuracy checks.
+3. Save at least two different frames with marked droplets. Include a mix of
+   early droplets, growth, and dry fabric. You can add recordings from different
+   fabrics to the same set. In-app training crops the saved frames to the same
+   oval used during replay and adjusts the boxes to match. The app holds back
+   later labelled frames from a selected recording. When training the combined
+   collection, it can hold out a separate recording.
+4. Click **Train the model**. The app checks held-back boxes and, for a selected
+   recording, replays the source to verify a marked leak position. A successful
+   run updates the detector used by **Recorded video** and **Live camera**. A
+   candidate that fails the checks leaves the existing detector active. CVAT
+   YOLO Detection ZIPs use the image framing supplied in the ZIP. Use separate
+   recordings and specimens for final accuracy checks.
 
-Saved annotations are stored locally under `data/fabric_annotations/`.
-Reopen the same file under the same fabric name to edit its saved boxes.
+Saved annotations are stored locally under `data/fabric_annotations/general/`.
+Reupload the same recording to edit its saved boxes. The active dashboard
+checkpoint is stored in `data/results/dashboard/active_droplet.pt`.
 
 ### Prepare videos sorted into leak/no-visible-leak folders
 
@@ -254,9 +245,8 @@ the candidate matched four of eight provisionally marked droplets in a selected
 reviewed negative frames. The original detector, evaluated with the same crop,
 matched none of the eight and produced 58 false boxes. These are small-sample
 results against AI-reviewed labels, not a general accuracy claim. The candidate
-is now offered as **Reviewed specimen model (experimental)** with the fabric
-boundary and opening-frame checks. It still misses droplets; selecting it does
-not establish general counting accuracy. Its local weights and comparison are under
+was evaluated with the fabric boundary and opening-frame checks. It still missed
+droplets. Its local weights and comparison are under
 `data/results/reviewed_crop_candidate_20261121/`.
 
 The results panel accepts an optional reference CSV with `x_px,y_px,time_s`
@@ -278,9 +268,10 @@ fabric. Coordinates in results remain relative to the full frame. Start with
 the defaults and tune confidence, confirmation hits, and matching distance on
 development recordings.
 
-The output includes `results.json`, `recording.mp4`, `final_marked.jpg`,
-and one `leak_XX.jpg` for each confirmed leak. The recording is original
-camera imagery re-encoded as MP4. Markers are saved on the images.
+The output includes `results.json`, the recording, `final_marked.jpg`, and
+one `leak_XX.jpg` for each confirmed leak. The dashboard reuses an uploaded
+recording when the test starts at zero. Other runs save a new MP4. Markers
+are saved on the images.
 
 ## Integrate with the hydrotester
 
